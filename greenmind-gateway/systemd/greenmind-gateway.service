@@ -1,0 +1,25 @@
+[Unit]
+Description=GreenMind Raspberry Pi Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=greenmind
+Group=greenmind
+EnvironmentFile=/etc/greenmind-gateway/config.env
+ExecStart=/var/lib/greenmind-gateway/venv/bin/python /var/lib/greenmind-gateway/src/gateway.py
+Restart=always
+RestartSec=2
+WorkingDirectory=/var/lib/greenmind-gateway
+
+# Security Sandbox
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# Allow write access to own directory for DB and Logs (if local logging)
+ReadWritePaths=/var/lib/greenmind-gateway
+
+[Install]
+WantedBy=multi-user.target
