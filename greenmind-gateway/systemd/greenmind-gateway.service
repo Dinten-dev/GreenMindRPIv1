@@ -1,25 +1,22 @@
 [Unit]
-Description=GreenMind Raspberry Pi Gateway
-After=network-online.target
+Description=GreenMind Raspberry Pi Edge Gateway
+After=network-online.target NetworkManager.service
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=greenmind
-Group=greenmind
-EnvironmentFile=/etc/greenmind-gateway/config.env
-ExecStart=/var/lib/greenmind-gateway/venv/bin/python /var/lib/greenmind-gateway/src/gateway.py
+# User root is required to interact with nmcli (NetworkManager) for AP creation 
+# without complex Polkit rules on a typical headless setup.
+User=root 
+WorkingDirectory=/opt/greenmind/gateway
+EnvironmentFile=-/opt/greenmind/gateway/.env
+ExecStart=/opt/greenmind/gateway/venv/bin/python src/main.py
 Restart=always
-RestartSec=2
-WorkingDirectory=/var/lib/greenmind-gateway
+RestartSec=5
 
-# Security Sandbox
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-# Allow write access to own directory for DB and Logs (if local logging)
-ReadWritePaths=/var/lib/greenmind-gateway
+# Logging
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
