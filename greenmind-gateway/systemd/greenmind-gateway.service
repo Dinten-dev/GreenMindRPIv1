@@ -5,18 +5,25 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# User root is required to interact with nmcli (NetworkManager) for AP creation 
-# without complex Polkit rules on a typical headless setup.
-User=root 
+# Root is required for nmcli AP management without Polkit configuration.
+User=root
 WorkingDirectory=/opt/greenmind/gateway
 EnvironmentFile=-/opt/greenmind/gateway/.env
 ExecStart=/opt/greenmind/gateway/venv/bin/python src/main.py
+
+# Restart policy with crash-loop protection
 Restart=always
 RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Systemd watchdog (service must send keep-alive within this interval)
+WatchdogSec=120
 
 # Logging
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=greenmind-gateway
 
 [Install]
 WantedBy=multi-user.target

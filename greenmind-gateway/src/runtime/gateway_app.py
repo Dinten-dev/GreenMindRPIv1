@@ -1,39 +1,55 @@
+"""Gateway runtime application.
+
+Starts the FastAPI ingest server alongside async background tasks
+for uploading, heartbeat, and remote management.
+"""
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
-import threading
-import logging
+
 from src.persistence.database import init_db
+from src.runtime.heartbeat import heartbeat_loop
 from src.runtime.ingest_api import router as ingest_router
-from src.runtime.upload_worker import UploadWorker
-from src.runtime.heartbeat import HeartbeatWorker
+from src.runtime.remote_manager import remote_manager_loop
+from src.runtime.upload_worker import upload_loop
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="GreenMind Edge Runtime")
+# Module-level reference set by run_gateway before uvicorn starts
+_credentials: dict = {}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start background workers on app startup, cancel on shutdown."""
+    tasks = [
+        asyncio.create_task(upload_loop(_credentials), name="upload_worker"),
+        asyncio.create_task(heartbeat_loop(_credentials), name="heartbeat_worker"),
+        asyncio.create_task(remote_manager_loop(_credentials), name="remote_manager"),
+    ]
+    logger.info("Background workers started: %s", [t.get_name() for t in tasks])
+    yield
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info("Background workers stopped.")
+
+
+app = FastAPI(title="GreenMind Edge Runtime", lifespan=lifespan)
 app.include_router(ingest_router, prefix="/api/v1")
 
-def run_gateway(credentials: dict, port: int = 80):
-    """
-    Main Execution Block for the Operational Gateway Mode.
-    Spins up the SQLite DB, Background threads, and the FastAPI ingress.
-    """
-    logger.info("Initializing runtime mode components...")
-    
-    # 1. Ensure SQLite queue is ready
+
+def run_gateway(credentials: dict, port: int = 80) -> None:
+    """Start the operational runtime: ingest API + background workers."""
+    global _credentials
+    _credentials = credentials
+
+    logger.info("Initializing runtime components...")
     init_db()
-    
-    # 2. Fire up background threads
-    uploader = UploadWorker(credentials)
-    heartbeat = HeartbeatWorker(credentials)
-    
-    t1 = threading.Thread(target=uploader.run, daemon=True, name="UploadWorker")
-    t2 = threading.Thread(target=heartbeat.run, daemon=True, name="HeartbeatWorker")
-    t1.start()
-    t2.start()
-    
-    # 3. Start ingress HTTP server on Port 80
-    logger.info(f"Starting local ESP32 Ingestion server on 0.0.0.0:{port}")
-    try:
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
-    except KeyboardInterrupt:
-        logger.info("Gateway Runtime terminated.")
+
+    logger.info("Starting ESP32 Ingestion server on 0.0.0.0:%d", port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")

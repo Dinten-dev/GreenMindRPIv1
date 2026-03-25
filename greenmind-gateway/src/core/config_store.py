@@ -1,64 +1,85 @@
-import os
+"""Manages secure persistence of gateway credentials in secrets.json."""
+
 import json
 import logging
-from typing import Optional, Dict, Any
+import os
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 class SecretStore:
-    """Manages secure persistence of device credentials locally."""
-    def __init__(self, filepath: str = "data/secrets.json"):
+    """Thread-safe read/write of device credentials on disk (chmod 600)."""
+
+    def __init__(self, filepath: str = "/opt/greenmind/data/secrets.json"):
         self.filepath = filepath
         self._ensure_file()
-        
-    def _ensure_file(self):
+
+    def _ensure_file(self) -> None:
         os.makedirs(os.path.dirname(os.path.abspath(self.filepath)), exist_ok=True)
         if not os.path.exists(self.filepath):
-            with open(self.filepath, "w") as f:
-                json.dump({}, f)
-            # Restrict permissions so only the owner can read/write the secrets
+            with open(self.filepath, "w") as fh:
+                json.dump({}, fh)
             try:
                 os.chmod(self.filepath, 0o600)
-            except Exception as e:
-                logger.warning(f"Failed to set chmod 600 on secrets file: {e}")
-            
-    def load(self) -> Dict[str, Any]:
+            except OSError as exc:
+                logger.warning("Failed to set chmod 600 on secrets file: %s", exc)
+
+    def load(self) -> dict[str, Any]:
         try:
-            with open(self.filepath, "r") as f:
-                return json.load(f)
+            with open(self.filepath, "r") as fh:
+                return json.load(fh)
         except json.JSONDecodeError:
-            logger.error("JSON decode error in secrets file. Starting fresh.")
+            logger.error("Corrupt secrets file – starting fresh.")
             return {}
         except FileNotFoundError:
             return {}
 
-    def save(self, data: Dict[str, Any]):
-        with open(self.filepath, "w") as f:
-            json.dump(data, f, indent=4)
-            
+    def save(self, data: dict[str, Any]) -> None:
+        with open(self.filepath, "w") as fh:
+            json.dump(data, fh, indent=4)
+        try:
+            os.chmod(self.filepath, 0o600)
+        except OSError:
+            pass
+
     def is_provisioned(self) -> bool:
-        """Determines if the device is fully set up and ready for operational mode."""
+        """True if the gateway has a valid API key and gateway ID."""
         data = self.load()
-        # Requires API Key, Device ID, and a target backend URL
-        return bool(data.get("api_key") and data.get("device_id"))
+        return bool(data.get("api_key") and data.get("gateway_id"))
 
-    def get_credentials(self) -> Optional[Dict[str, str]]:
-        """Returns provisioning credentials if they exist."""
+    def get_credentials(self) -> dict[str, str] | None:
+        """Return credentials dict or None if not provisioned."""
         data = self.load()
-        if self.is_provisioned():
-            return {
-                "api_key": data["api_key"],
-                "device_id": data["device_id"],
-                "greenhouse_id": data.get("greenhouse_id"),
-                "server_url": data.get("server_url", "https://api.greenmind.xyz/api/v1")
-            }
-        return None
+        if not self.is_provisioned():
+            return None
+        return {
+            "api_key": data["api_key"],
+            "gateway_id": data["gateway_id"],
+            "greenhouse_id": data.get("greenhouse_id", ""),
+            "hardware_id": data.get("hardware_id", ""),
+            "server_url": data.get("server_url", ""),
+        }
 
-    def store_credentials(self, api_key: str, device_id: str, greenhouse_id: str, server_url: str):
+    def store_credentials(
+        self,
+        api_key: str,
+        gateway_id: str,
+        greenhouse_id: str,
+        hardware_id: str,
+        server_url: str,
+    ) -> None:
+        """Persist pairing result securely."""
         data = self.load()
         data["api_key"] = api_key
-        data["device_id"] = device_id
+        data["gateway_id"] = gateway_id
         data["greenhouse_id"] = greenhouse_id
+        data["hardware_id"] = hardware_id
         data["server_url"] = server_url
         self.save(data)
-        logger.info("Credentials firmly persisted to local storage.")
+        logger.info("Credentials persisted to %s", self.filepath)
+
+    def wipe(self) -> None:
+        """Remove all stored credentials (hard-reset)."""
+        self.save({})
+        logger.warning("All credentials wiped from secrets store.")

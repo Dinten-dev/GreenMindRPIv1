@@ -1,63 +1,65 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# GreenMind Gateway – Raspberry Pi Installation Script
+# Usage: sudo bash scripts/install.sh
+set -euo pipefail
 
-# Configuration
-APP_NAME="greenmind-gateway"
-INSTALL_DIR="/var/lib/$APP_NAME"
-CONFIG_DIR="/etc/$APP_NAME"
-SERVICE_NAME="$APP_NAME.service"
+INSTALL_DIR="/opt/greenmind/gateway"
+DATA_DIR="/opt/greenmind/data"
+LOG_DIR="${DATA_DIR}/logs"
+SERVICE_NAME="greenmind-gateway"
 
-echo "Installing $APP_NAME..."
+echo "🌿 GreenMind Gateway Installer"
+echo "================================"
 
-# 1. Create User
-if ! id -u greenmind > /dev/null 2>&1; then
-    echo "Creating user greenmind..."
-    useradd -r -s /bin/false greenmind
+# 1. System dependencies
+echo "📦 Installing system dependencies..."
+apt-get update -qq
+apt-get install -y -qq network-manager python3-venv sqlite3
+
+# 2. Ensure NetworkManager is the active network backend
+echo "🔧 Enabling NetworkManager..."
+systemctl enable --now NetworkManager || true
+
+# 3. Create directories
+echo "📁 Creating directories..."
+mkdir -p "${INSTALL_DIR}"
+mkdir -p "${DATA_DIR}"
+mkdir -p "${LOG_DIR}"
+
+# 4. Copy source (if running from the repo)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -d "${SCRIPT_DIR}/src" ]; then
+    echo "📋 Copying source files to ${INSTALL_DIR}..."
+    cp -r "${SCRIPT_DIR}/src" "${INSTALL_DIR}/"
+    cp -r "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
+    [ -f "${SCRIPT_DIR}/.env" ] && cp "${SCRIPT_DIR}/.env" "${INSTALL_DIR}/.env"
 fi
 
-# 2. Create Directories
-echo "Creating directories..."
-mkdir -p "$INSTALL_DIR/src"
-mkdir -p "$CONFIG_DIR"
-chown -R greenmind:greenmind "$INSTALL_DIR"
-chown -R greenmind:greenmind "$CONFIG_DIR"
+# 5. Python virtual environment
+echo "🐍 Setting up Python virtual environment..."
+python3 -m venv "${INSTALL_DIR}/venv"
+"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip -q
+"${INSTALL_DIR}/venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" -q
 
-# 3. Copy Application Files
-echo "Copying application files..."
-# Assuming script is run from project root or checks relative path
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-SRC_ROOT="$SCRIPT_DIR/.."
+# 6. Set permissions on data directory
+chmod 700 "${DATA_DIR}"
 
-cp "$SRC_ROOT/src/gateway.py" "$INSTALL_DIR/src/"
-
-# 4. Setup Python Environment
-if [ ! -d "$INSTALL_DIR/venv" ]; then
-    echo "Setting up Python venv..."
-    python3 -m venv "$INSTALL_DIR/venv"
-    "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
-    "$INSTALL_DIR/venv/bin/pip" install fastapi uvicorn requests python-dotenv
-fi
-
-# 5. Install Config
-if [ ! -f "$CONFIG_DIR/config.env" ]; then
-    echo "Installing default config..."
-    cp "$SRC_ROOT/config/config.env.example" "$CONFIG_DIR/config.env"
-    echo "PLEASE EDIT $CONFIG_DIR/config.env WITH CORRECT VALUES"
-fi
-
-# 6. Install Systemd Service
-echo "Installing systemd service..."
-cp "$SRC_ROOT/systemd/$SERVICE_NAME" "/etc/systemd/system/"
+# 7. Install systemd service
+echo "⚙️  Installing systemd service..."
+cp "${SCRIPT_DIR}/systemd/${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
+systemctl enable "${SERVICE_NAME}"
 
-echo "Fixing permissions..."
-chown -R greenmind:greenmind "$INSTALL_DIR"
-chown -R greenmind:greenmind "$CONFIG_DIR"
-chmod 700 "$INSTALL_DIR"
-chmod 600 "$CONFIG_DIR/config.env"
-
-echo "Installation complete."
-echo "To start service: systemctl start $SERVICE_NAME"
-echo "Check status: systemctl status $SERVICE_NAME"
-echo "Check logs: journalctl -u $SERVICE_NAME -f"
+echo ""
+echo "✅ Installation complete!"
+echo ""
+echo "   Start the service:   sudo systemctl start ${SERVICE_NAME}"
+echo "   View logs:           sudo journalctl -u ${SERVICE_NAME} -f"
+echo "   Service status:      sudo systemctl status ${SERVICE_NAME}"
+echo ""
+echo "   Data directory:      ${DATA_DIR}"
+echo "   Log directory:       ${LOG_DIR}"
+echo "   Secrets file:        ${DATA_DIR}/secrets.json"
+echo ""
+echo "   To factory-reset:    sudo touch /boot/reset_greenmind.txt && sudo reboot"
+echo ""

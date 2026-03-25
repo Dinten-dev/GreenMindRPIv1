@@ -1,14 +1,71 @@
+"""Gateway configuration via pydantic-settings.
+
+All values come from environment variables or the .env file.
+Hardware ID is auto-detected from the Raspberry Pi serial number.
+"""
+
+import logging
+import os
+
 from pydantic_settings import BaseSettings
 
+logger = logging.getLogger(__name__)
+
+
+def _read_hardware_id() -> str:
+    """Read the Raspberry Pi serial number from the device tree.
+
+    Falls back to a placeholder on non-Pi systems (e.g. during development).
+    """
+    serial_path = "/sys/firmware/devicetree/base/serial-number"
+    try:
+        if os.path.exists(serial_path):
+            with open(serial_path, "r") as f:
+                serial = f.read().strip().rstrip("\x00")
+                if serial:
+                    return serial
+    except OSError as exc:
+        logger.warning("Could not read hardware serial: %s", exc)
+
+    # Fallback for dev machines
+    import uuid
+
+    fallback = f"dev-{uuid.getnode():012x}"
+    logger.info("Using fallback hardware ID: %s", fallback)
+    return fallback
+
+
 class Settings(BaseSettings):
-    gateway_id: str = "pi-gw-01"
-    hetzner_api_url: str = "http://macmini.local:8000/api/v1/ingest"
-    hetzner_api_token: str = "changeme"
-    esp32_auth_token: str = "secret_from_esp32"
-    sqlite_db_url: str = "sqlite:////var/lib/greenmind-gateway/queue.db"
-    allow_unauthenticated_esp32: bool = True
-    
+    """Central configuration for the gateway service."""
+
+    # Cloud backend
+    cloud_api_url: str = "https://api.greenmind.xyz/api/v1"
+
+    # Intervals (seconds)
+    upload_interval: int = 10
+    heartbeat_interval: int = 60
+
+    # Persistence
+    db_path: str = "/opt/greenmind/data/queue.db"
+    secrets_path: str = "/opt/greenmind/data/secrets.json"
+
+    # Logging
+    log_dir: str = "/opt/greenmind/data/logs"
+    log_level: str = "INFO"
+
+    # Queue limits
+    max_queue_size: int = 100_000
+
+    # Hardware (auto-detected, overridable)
+    hardware_id: str = ""
+
     class Config:
         env_file = ".env"
+        env_file_encoding = "utf-8"
+
+    def model_post_init(self, __context) -> None:
+        if not self.hardware_id:
+            self.hardware_id = _read_hardware_id()
+
 
 settings = Settings()
