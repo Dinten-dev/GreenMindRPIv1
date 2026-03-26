@@ -69,6 +69,17 @@ async def upload_loop(credentials: dict) -> None:
                                 "[E-202] Cloud rejected job %d (auth). Moved to DLQ.",
                                 job.id,
                             )
+                        elif resp.status_code == 410:
+                            try:
+                                data = resp.json()
+                                if data.get("detail", {}).get("action") == "RESET_TO_SETUP_MODE":
+                                    logger.critical("Gateway deleted remotely. Initiating reset sequence.")
+                                    from src.runtime.reset import trigger_remote_reset
+                                    await trigger_remote_reset()
+                            except Exception:
+                                pass
+                            _move_to_dlq(db, job, f"Unassigned 410: {resp.text}")
+                            logger.error("Job %d rejected (410 Gone). DLQ.", job.id)
                             await asyncio.sleep(5)
 
                         elif resp.status_code == 422:

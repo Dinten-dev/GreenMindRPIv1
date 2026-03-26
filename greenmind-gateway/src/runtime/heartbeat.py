@@ -46,6 +46,16 @@ async def heartbeat_loop(credentials: dict) -> None:
                 )
                 if resp.status_code == 200:
                     logger.debug("Heartbeat OK.")
+                elif resp.status_code == 410:
+                    try:
+                        data = resp.json()
+                        if data.get("detail", {}).get("action") == "RESET_TO_SETUP_MODE":
+                            logger.critical("Gateway deleted remotely. Initiating reset sequence.")
+                            from src.runtime.reset import trigger_remote_reset
+                            await trigger_remote_reset()
+                    except Exception:
+                        pass
+                    logger.warning("Heartbeat returned 410 Gone, but payload was unrecognized: %s", resp.text)
                 else:
                     logger.warning(
                         "Heartbeat returned %d: %s", resp.status_code, resp.text
