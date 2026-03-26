@@ -43,7 +43,7 @@ app = FastAPI(title="GreenMind Edge Runtime", lifespan=lifespan)
 app.include_router(ingest_router, prefix="/api/v1")
 
 
-def run_gateway(credentials: dict, port: int = 80) -> None:
+async def run_gateway(credentials: dict, port: int = 80) -> None:
     """Start the operational runtime: ingest API + background workers."""
     global _credentials
     _credentials = credentials
@@ -52,4 +52,6 @@ def run_gateway(credentials: dict, port: int = 80) -> None:
     init_db()
 
     logger.info("Starting ESP32 Ingestion server on 0.0.0.0:%d", port)
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    await server.serve()

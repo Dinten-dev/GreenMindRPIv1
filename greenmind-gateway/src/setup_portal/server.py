@@ -12,7 +12,7 @@ import signal
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Form, Request
+from fastapi import BackgroundTasks, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.config import settings
@@ -42,8 +42,20 @@ async def get_form():
     return html
 
 
+@app.get("/tailwind.js", response_class=HTMLResponse)
+async def get_tailwind():
+    """Serve the local tailwind CSS script for offline rendering."""
+    path = os.path.join(TEMPLATE_DIR, "tailwind.js")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return HTMLResponse(content=fh.read(), media_type="application/javascript")
+    except FileNotFoundError:
+        return HTMLResponse(content="", status_code=404)
+
+
 @app.post("/setup")
 async def do_setup(
+    background_tasks: BackgroundTasks,
     ssid: str = Form(...),
     password: str = Form(""),
     pairing_code: str = Form(...),
@@ -56,24 +68,32 @@ async def do_setup(
 
     store: SecretStore = app.state.store
 
+    # Schedule the actual provisioning in the background so we can return a 200 OK
+    # to the client before we drop the AP connection.
+    background_tasks.add_task(
+        _run_provisioning, store, ssid, password, pairing_code, gateway_name, server_url
+    )
+
+    return JSONResponse(content={"status": "success"})
+
+
+async def _run_provisioning(store, ssid, password, pairing_code, gateway_name, server_url):
+    """Executes the Wi-Fi connection and Cloud registration flow."""
+    # Sleep to allow the HTTP response to reach the browser before dropping AP
+    await asyncio.sleep(2)
+
     # 1. Connect to WiFi
     try:
         await NetworkManager.connect_to_wifi(ssid, password)
     except WiFiConnectionError as exc:
         logger.error("[E-101] %s", exc)
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "detail": str(exc)},
-        )
+        return
 
     # 2. Check internet
     if not await NetworkManager.check_internet():
         logger.error("Connected to WiFi but no internet.")
         await NetworkManager.start_ap(hw_suffix=settings.hardware_id[-4:])
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "detail": "WLAN verbunden, aber kein Internet."},
-        )
+        return
 
     # 3. Register with cloud backend
     try:
@@ -91,10 +111,7 @@ async def do_setup(
                 detail = resp.text
                 logger.error("[E-202] Pairing rejected: %s", detail)
                 await NetworkManager.start_ap(hw_suffix=settings.hardware_id[-4:])
-                return JSONResponse(
-                    status_code=400,
-                    content={"status": "error", "detail": f"Pairing fehlgeschlagen: {detail}"},
-                )
+                return
 
             data = resp.json()
             gateway_id = data["gateway_id"]
@@ -104,10 +121,7 @@ async def do_setup(
     except httpx.HTTPError as exc:
         logger.error("[E-202] Cloud connection failed: %s", exc)
         await NetworkManager.start_ap(hw_suffix=settings.hardware_id[-4:])
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "detail": f"Cloud nicht erreichbar: {exc}"},
-        )
+        return
 
     # 4. Persist credentials
     store.store_credentials(
@@ -119,11 +133,8 @@ async def do_setup(
     )
 
     logger.info("Provisioning complete. Scheduling service restart.")
-
-    # Give the HTTP response time to reach the client before killing the server
-    asyncio.get_event_loop().call_later(2.0, _kill_server)
-
-    return JSONResponse(content={"status": "success"})
+    await asyncio.sleep(1)
+    _kill_server()
 
 
 def _kill_server():
@@ -132,7 +143,7 @@ def _kill_server():
     os.kill(os.getpid(), signal.SIGINT)
 
 
-def run_setup_server(store: SecretStore, port: int = 80) -> bool:
+async def run_setup_server(store: SecretStore, port: int = 80) -> bool:
     """Block and run the setup portal until provisioning succeeds."""
     app.state.store = store
 
@@ -142,8 +153,10 @@ def run_setup_server(store: SecretStore, port: int = 80) -> bool:
     )
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
-    except KeyboardInterrupt:
+        config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+        server = uvicorn.Server(config)
+        await server.serve()
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Setup server terminated.")
 
     return store.is_provisioned()

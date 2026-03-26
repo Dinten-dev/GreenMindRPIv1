@@ -62,12 +62,13 @@ class NetworkManager:
             logger.info("AP profile exists – bringing it up.")
             ok, _ = await NetworkManager._run(["nmcli", "connection", "up", AP_CONNECTION_NAME])
         else:
-            logger.info("Creating new AP profile.")
+            logger.info("Creating new AP profile (password: 12345678).")
             ok, _ = await NetworkManager._run(
                 [
                     "nmcli", "device", "wifi", "hotspot",
                     "ifname", "wlan0",
                     "ssid", ssid,
+                    "password", "12345678",
                     "con-name", AP_CONNECTION_NAME,
                 ]
             )
@@ -92,15 +93,47 @@ class NetworkManager:
         await NetworkManager.ensure_ap_off()
         await asyncio.sleep(2)
 
-        args = ["nmcli", "device", "wifi", "connect", ssid]
-        if password:
-            args += ["password", password]
+        # Force a Wi-Fi rescan since the interface just left AP mode and its cache is empty
+        await NetworkManager._run(["nmcli", "device", "wifi", "rescan"])
+        await asyncio.sleep(4)
 
-        ok, out = await NetworkManager._run(args, timeout=WIFI_CONNECT_TIMEOUT)
-        if ok:
-            logger.info("Connected to %s", ssid)
-            return True
+        for attempt in range(3):
+            # Delete any existing broken profile with the same SSID name
+            await NetworkManager._run(["nmcli", "connection", "delete", ssid])
 
+            # Build the connection manually to bypass 'key-mgmt is missing' bugs
+            # prevalent in 'nmcli device wifi connect' auto-detection
+            ok, out = await NetworkManager._run([
+                "nmcli", "connection", "add",
+                "type", "wifi",
+                "con-name", ssid,
+                "ifname", "wlan0",
+                "ssid", ssid
+            ])
+            
+            if password:
+                await NetworkManager._run([
+                    "nmcli", "connection", "modify", ssid,
+                    "wifi-sec.key-mgmt", "wpa-psk",
+                    "wifi-sec.psk", password
+                ])
+                
+            logger.info(f"Connection attempt {attempt + 1}/3 for {ssid}")
+            ok, out = await NetworkManager._run(["nmcli", "connection", "up", ssid], timeout=WIFI_CONNECT_TIMEOUT)
+            
+            if ok:
+                logger.info("Connected to %s", ssid)
+                return True
+                
+            if "No network with SSID" in out:
+                logger.warning(f"SSID not found on attempt {attempt + 1}, rescanning...")
+                await NetworkManager._run(["nmcli", "device", "wifi", "rescan"])
+                await asyncio.sleep(3)
+            else:
+                logger.warning(f"Connection failed on attempt {attempt + 1}: {out}")
+                await asyncio.sleep(2)
+        
+        # If we exhausted all retries, raise error
         logger.error("WiFi connection failed – reverting to AP mode.")
         await NetworkManager.start_ap()
         raise WiFiConnectionError(f"Could not connect to '{ssid}': {out}")

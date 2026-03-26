@@ -55,7 +55,7 @@ async def async_main() -> None:
             return
 
         from src.runtime.gateway_app import run_gateway
-        run_gateway(credentials)
+        await run_gateway(credentials)
     else:
         logger.info("State: UNPROVISIONED → entering setup mode.")
         await _enter_setup_mode(store, settings)
@@ -69,7 +69,7 @@ async def _enter_setup_mode(store, settings) -> None:
     hw_suffix = settings.hardware_id[-4:] if len(settings.hardware_id) >= 4 else "0000"
     await NetworkManager.start_ap(hw_suffix=hw_suffix)
 
-    success = run_setup_server(store, port=80)
+    success = await run_setup_server(store, port=80)
 
     if success:
         logger.info("Provisioning complete. Exiting for systemd restart.")

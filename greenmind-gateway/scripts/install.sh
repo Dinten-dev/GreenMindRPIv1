@@ -44,7 +44,14 @@ python3 -m venv "${INSTALL_DIR}/venv"
 # 6. Set permissions on data directory
 chmod 700 "${DATA_DIR}"
 
-# 7. Install systemd service
+# 7. Allow all inbound traffic on wlan0 for setup AP (DHCP, DNS, HTTP)
+if command -v ufw &> /dev/null; then
+    echo "🔒 Configuring firewall for Setup AP..."
+    ufw allow in on wlan0 || true
+    ufw reload || true
+fi
+
+# 8. Install systemd service
 echo "⚙️  Installing systemd service..."
 cp "${SCRIPT_DIR}/systemd/${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 systemctl daemon-reload

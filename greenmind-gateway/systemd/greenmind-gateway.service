@@ -9,7 +9,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/greenmind/gateway
 EnvironmentFile=-/opt/greenmind/gateway/.env
-ExecStart=/opt/greenmind/gateway/venv/bin/python src/main.py
+ExecStart=/opt/greenmind/gateway/venv/bin/python -m src.main
 
 # Restart policy with crash-loop protection
 Restart=always
@@ -17,8 +17,7 @@ RestartSec=5
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
-# Systemd watchdog (service must send keep-alive within this interval)
-WatchdogSec=120
+# Systemd watchdog disabled for setup mode
 
 # Logging
 StandardOutput=journal
