@@ -179,8 +179,18 @@ class NetworkManager:
                 logger.info("Deleting WiFi profile: %s", name)
                 await NetworkManager._run(["nmcli", "connection", "delete", name])
 
+    @staticmethod
+    async def get_current_wifi_ssid() -> str | None:
+        """Get the SSID of the currently active WiFi connection."""
+        ok, out = await NetworkManager._run(["nmcli", "-t", "-f", "NAME,TYPE,STATE", "connection", "show"])
+        if not ok:
+            return None
+        for line in out.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 3 and parts[1] == "802-11-wireless" and parts[2] == "activated":
+                return parts[0]
+        return None
 
 def quality_to_dbm(quality: int) -> int:
     """Convert nmcli signal quality (0-100) to approximate dBm."""
-    # Linear approximation: 100% ≈ -30 dBm, 0% ≈ -90 dBm
     return -90 + int(quality * 0.6)

@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from src.persistence.database import init_db
 from src.runtime.heartbeat import heartbeat_loop
 from src.runtime.ingest_api import router as ingest_router
+from src.runtime.udp_discovery import udp_discovery_server
 from src.runtime.remote_manager import remote_manager_loop
 from src.runtime.upload_worker import upload_loop
 
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(upload_loop(_credentials), name="upload_worker"),
         asyncio.create_task(heartbeat_loop(_credentials), name="heartbeat_worker"),
         asyncio.create_task(remote_manager_loop(_credentials), name="remote_manager"),
+        asyncio.create_task(udp_discovery_server(), name="udp_discovery"),
     ]
     logger.info("Background workers started: %s", [t.get_name() for t in tasks])
     yield

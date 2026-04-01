@@ -7,11 +7,12 @@ retries or 4xx errors) are moved to the Dead Letter Queue.
 import asyncio
 import json
 import logging
+import uuid
 
 import httpx
 
 from src.config import settings
-from src.persistence.database import SessionLocal
+from src.persistence import database
 from src.persistence.models import DeadLetterJob, IngestJob
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ async def upload_loop(credentials: dict) -> None:
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         while True:
-            db = SessionLocal()
+            db = database.SessionLocal()
             try:
                 jobs = (
                     db.query(IngestJob)
@@ -49,10 +50,13 @@ async def upload_loop(credentials: dict) -> None:
                     payload = json.loads(job.payload_json)
                     headers = {"X-Api-Key": api_key}
 
+                    # Transform sensor payload into cloud schema
+                    cloud_payload = _transform_payload(payload)
+
                     try:
                         resp = await client.post(
                             f"{server_url}/ingest",
-                            json=payload,
+                            json=cloud_payload,
                             headers=headers,
                         )
 
@@ -139,3 +143,45 @@ def _move_to_dlq(db, job: IngestJob, reason: str) -> None:
     db.add(dlq)
     db.delete(job)
     db.commit()
+
+
+def _transform_payload(payload: dict) -> dict:
+    """Transform ESP32 sensor payload into cloud IngestRequest schema.
+
+    ESP32 sends:
+        {"mac_address": "...", "gateway_serial": "...",
+         "readings": [{"kind": "bio_signal", "value": 1.23, "unit": "V"}]}
+
+    Cloud expects:
+        {"measurement_id": "...", "gateway_serial": "...",
+         "readings": [{"sensor_mac": "...", "sensor_kind": "bio_signal",
+                        "value": 1.23, "unit": "V", "timestamp": "..."}]}
+
+    Each reading gets a unique timestamp spaced 20ms apart (50Hz sample rate)
+    to avoid primary key collisions in TimescaleDB (PK = timestamp+sensor_id+kind).
+    """
+    from datetime import datetime, timedelta, timezone
+
+    mac = payload.get("mac_address", "")
+    gateway_serial = payload.get("gateway_serial", "")
+
+    now = datetime.now(timezone.utc)
+    n_readings = len(payload.get("readings", []))
+
+    cloud_readings = []
+    for i, reading in enumerate(payload.get("readings", [])):
+        # Space readings 20ms apart, oldest first
+        ts = now - timedelta(milliseconds=20 * (n_readings - 1 - i))
+        cloud_readings.append({
+            "sensor_mac": mac,
+            "sensor_kind": reading.get("kind", reading.get("sensor_kind", "bio_signal")),
+            "value": reading.get("value", 0.0),
+            "unit": reading.get("unit", "V"),
+            "timestamp": ts.isoformat(),
+        })
+
+    return {
+        "measurement_id": str(uuid.uuid4()),
+        "gateway_serial": gateway_serial,
+        "readings": cloud_readings,
+    }

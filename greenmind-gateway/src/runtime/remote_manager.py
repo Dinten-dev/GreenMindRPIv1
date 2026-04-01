@@ -11,11 +11,13 @@ import subprocess
 import httpx
 
 from src.config import settings
+from src.network.wifi_manager import NetworkManager
+from src.runtime.ingest_api import sensor_ips
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL = 60  # seconds
-ALLOWED_COMMANDS = {"reboot", "restart_service"}
+ALLOWED_COMMANDS = {"reboot", "restart_service", "provision_sensor", "delete_sensor"}
 
 
 async def remote_manager_loop(credentials: dict) -> None:
@@ -39,7 +41,7 @@ async def remote_manager_loop(credentials: dict) -> None:
                     data = resp.json()
                     commands = data if isinstance(data, list) else data.get("commands", [])
                     for cmd in commands:
-                        await _execute_command(cmd)
+                        await _execute_command(cmd, credentials)
 
                 elif resp.status_code == 404:
                     # Endpoint not yet implemented on the cloud – silent skip
@@ -57,7 +59,7 @@ async def remote_manager_loop(credentials: dict) -> None:
             await asyncio.sleep(POLL_INTERVAL)
 
 
-async def _execute_command(cmd: dict) -> None:
+async def _execute_command(cmd: dict, credentials: dict) -> None:
     """Execute a verified remote command."""
     action = cmd.get("action", "")
 
@@ -78,3 +80,48 @@ async def _execute_command(cmd: dict) -> None:
             ["sudo", "systemctl", "restart", "greenmind-gateway"],
             check=False,
         )
+    
+    elif action == "provision_sensor":
+        target_mac = cmd.get("mac_address", "")
+        if not target_mac:
+            return
+            
+        logger.info("Provisioning sensor %s", target_mac)
+        wifi_ssid = credentials.get("wifi_ssid")
+        wifi_password = credentials.get("wifi_password")
+        
+        # SoftAP Ninja Hop
+        target_ap = f"GreenMind-Sensor-{target_mac.replace(':', '')[-4:]}"
+        original_ssid = await NetworkManager.get_current_wifi_ssid()
+        
+        if original_ssid and await NetworkManager.ninja_hop(target_ap):
+            await asyncio.sleep(3)
+            # Send WiFi data
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    await client.post("http://192.168.4.1/provision", json={
+                        "wifi_ssid": wifi_ssid,
+                        "wifi_password": wifi_password
+                    })
+                    logger.info("Provisioning sent to sensor!")
+            except Exception as e:
+                logger.error("Failed to provision sensor via HTTP: %s", e)
+            
+            # Hop back
+            await NetworkManager.connect_to_wifi(original_ssid, wifi_password)
+
+    elif action == "delete_sensor":
+        target_mac = cmd.get("mac_address", "")
+        if not target_mac:
+            return
+            
+        ip = sensor_ips.get(target_mac)
+        if ip:
+            logger.info("Sending DELETE command to sensor %s at %s", target_mac, ip)
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    await client.post(f"http://{ip}/provision", content="DELETE /provision HTTP/1.1\r\n\r\n")
+            except Exception as e:
+                logger.error("Failed to delete sensor %s via HTTP: %s", target_mac, e)
+        else:
+            logger.warning("Could not delete sensor %s: IP not in cache", target_mac)
