@@ -157,7 +157,7 @@ def _transform_payload(payload: dict) -> dict:
          "readings": [{"sensor_mac": "...", "sensor_kind": "bio_signal",
                         "value": 1.23, "unit": "V", "timestamp": "..."}]}
 
-    Each reading gets a unique timestamp spaced 20ms apart (50Hz sample rate)
+    Each reading gets a unique timestamp spaced 50ms apart (20Hz sample rate)
     to avoid primary key collisions in TimescaleDB (PK = timestamp+sensor_id+kind).
     """
     from datetime import datetime, timedelta, timezone
@@ -170,8 +170,8 @@ def _transform_payload(payload: dict) -> dict:
 
     cloud_readings = []
     for i, reading in enumerate(payload.get("readings", [])):
-        # Space readings 20ms apart, oldest first
-        ts = now - timedelta(milliseconds=20 * (n_readings - 1 - i))
+        # Space readings 50ms apart (20Hz), oldest first
+        ts = now - timedelta(milliseconds=50 * (n_readings - 1 - i))
         cloud_readings.append({
             "sensor_mac": mac,
             "sensor_kind": reading.get("kind", reading.get("sensor_kind", "bio_signal")),
