@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # Queue limits
     max_queue_size: int = 100_000
 
+    # WAV archival
+    wav_dir: str = "/opt/greenmind/data/wav"
+    wav_chunk_minutes: int = 10
+
     # Hardware (auto-detected, overridable)
     hardware_id: str = ""
 

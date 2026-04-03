@@ -1,6 +1,6 @@
 # GreenMind Raspberry Pi Gateway
 
-> Production-ready edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes, buffers locally in SQLite, and uploads to the cloud backend.
+> Production-ready edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes at 380 Hz, archives raw data as WAV files, buffers aggregates locally in SQLite, and uploads to the cloud backend.
 
 ---
 
@@ -27,8 +27,10 @@ Boot → is provisioned?
         ├── NO  → Start AP (GreenMind-Gateway-XXXX) → Setup Portal on :80
         └── YES → Runtime Mode
                    ├── FastAPI Ingest Server (:80)
-                   ├── Upload Worker (async → Cloud)
-                   ├── Heartbeat Worker (60s → Cloud)
+                   │    └── WAV Writer (10-min chunks, 16-bit PCM, 380 Hz)
+                   ├── Upload Worker (aggregate readings → Cloud)
+                   ├── WAV Uploader (completed WAV → Cloud MinIO)
+                   ├── Heartbeat Worker (60s → Cloud telemetry)
                    └── Remote Manager (command polling)
 ```
 
@@ -63,7 +65,7 @@ The gateway reboots into runtime mode, starts accepting ESP32 sensor data, and u
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/ingest` | Receive sensor data (JSON) |
+| POST | `/api/v1/ingest` | Receive sensor data (380 samples/batch, JSON) |
 | GET | `/api/v1/health` | Local health check |
 
 ### Cloud Endpoints (Gateway → Cloud)
@@ -72,7 +74,8 @@ The gateway reboots into runtime mode, starts accepting ESP32 sensor data, and u
 |--------|----------|------|-------------|
 | POST | `/api/v1/gateways/register` | Pairing Code | Register gateway |
 | POST | `/api/v1/gateways/heartbeat` | X-Api-Key | Send health telemetry |
-| POST | `/api/v1/ingest` | X-Api-Key | Upload sensor readings |
+| POST | `/api/v1/ingest` | X-Api-Key | Upload aggregate readings (1 Hz) |
+| POST | `/api/v1/wav/upload` | X-Api-Key | Upload completed WAV file (multipart) |
 | GET | `/api/v1/gateways/{id}/commands` | X-Api-Key | Poll remote commands |
 
 ---
@@ -120,10 +123,50 @@ Every 60 seconds, the gateway sends:
 ## Offline Resilience
 
 When the cloud is unreachable:
-1. Sensor data is stored in the local SQLite queue (`/opt/greenmind/data/queue.db`)
-2. The upload worker retries with exponential backoff (10s → 300s)
-3. After 20 failed retries, jobs move to the Dead Letter Queue
-4. Queue capacity: 100,000 entries (configurable via `MAX_QUEUE_SIZE`)
+1. Aggregate readings are stored in the local SQLite queue (`/opt/greenmind/data/queue.db`)
+2. WAV files remain in `/opt/greenmind/data/wav/` until upload succeeds
+3. The upload worker retries with exponential backoff (10s → 300s)
+4. After 20 failed retries, jobs move to the Dead Letter Queue
+5. Queue capacity: 100,000 entries (configurable via `MAX_QUEUE_SIZE`)
+
+---
+
+## WAV Archival
+
+The gateway archives raw high-frequency sensor data as WAV files for later model training and analysis.
+
+### Format
+| Property | Value |
+|----------|-------|
+| **Sample Rate** | 380 Hz |
+| **Bit Depth** | 16-bit signed integer |
+| **Channels** | Mono |
+| **Chunk Duration** | 10 minutes |
+| **File Size** | ~456 KB per chunk |
+| **Value Mapping** | 0–3300 mV → 0–32767 int16 |
+
+### Storage
+```
+/opt/greenmind/data/wav/
+└── AABBCCDDEEFF/               # Sensor MAC (no colons)
+    ├── AABBCCDDEEFF_20260403T120000.wav
+    ├── AABBCCDDEEFF_20260403T121000.wav
+    └── ...
+```
+
+### Storage Calculation
+| Timeframe | Per Sensor | 5 Sensors |
+|-----------|-----------|----------|
+| 1 day | 65.7 MB | 328 MB |
+| 1 week | 460 MB | 2.3 GB |
+| 1 month | 1.97 GB | 9.9 GB |
+
+### Upload Flow
+1. The `wav_writer` appends samples to the current 10-minute chunk
+2. When the chunk is full, it closes and opens a new file
+3. The `wav_uploader` worker scans for completed files every 30s
+4. Completed files are uploaded via `POST /api/v1/wav/upload` (multipart)
+5. On successful upload, the local file is deleted
 
 ---
 
@@ -188,8 +231,10 @@ greenmind-gateway/
     │       └── setup.html  # Tailwind CDN UI
     └── runtime/
         ├── gateway_app.py  # FastAPI + async tasks
-        ├── ingest_api.py   # ESP32 ingestion
+        ├── ingest_api.py   # ESP32 ingestion + WAV write + aggregate
         ├── upload_worker.py # Cloud uploader (DLQ, backoff)
+        ├── wav_writer.py   # 10-min WAV chunk writer (16-bit PCM)
+        ├── wav_uploader.py # Completed WAV → Cloud MinIO
         ├── heartbeat.py    # Health telemetry
         └── remote_manager.py # Remote commands
 ```

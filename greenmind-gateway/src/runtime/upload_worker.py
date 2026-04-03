@@ -150,33 +150,43 @@ def _transform_payload(payload: dict) -> dict:
 
     ESP32 sends:
         {"mac_address": "...", "gateway_serial": "...",
-         "readings": [{"kind": "bio_signal", "value": 1.23, "unit": "V"}]}
+         "readings": [{"kind": "bio_signal", "value": 1.23, "unit": "mV"}]}
 
     Cloud expects:
         {"measurement_id": "...", "gateway_serial": "...",
          "readings": [{"sensor_mac": "...", "sensor_kind": "bio_signal",
-                        "value": 1.23, "unit": "V", "timestamp": "..."}]}
+                        "value": 1.23, "unit": "mV", "timestamp": "..."}]}
 
-    Each reading gets a unique timestamp spaced 50ms apart (20Hz sample rate)
-    to avoid primary key collisions in TimescaleDB (PK = timestamp+sensor_id+kind).
+    Timestamp spacing is dynamic: for aggregate payloads (1 reading) no spacing
+    is needed. For multi-reading payloads, spacing is derived from sample_rate.
     """
     from datetime import datetime, timedelta, timezone
 
     mac = payload.get("mac_address", "")
     gateway_serial = payload.get("gateway_serial", "")
+    sample_rate = payload.get("sample_rate", 20)
 
     now = datetime.now(timezone.utc)
-    n_readings = len(payload.get("readings", []))
+    readings = payload.get("readings", [])
+    n_readings = len(readings)
+
+    # Calculate spacing: for 1 reading (aggregate) use 0ms, else derive from rate
+    if n_readings <= 1:
+        spacing_ms = 0
+    else:
+        spacing_ms = 1000.0 / sample_rate if sample_rate > 0 else 50
 
     cloud_readings = []
-    for i, reading in enumerate(payload.get("readings", [])):
-        # Space readings 50ms apart (20Hz), oldest first
-        ts = now - timedelta(milliseconds=50 * (n_readings - 1 - i))
+    for i, reading in enumerate(readings):
+        if n_readings <= 1:
+            ts = now
+        else:
+            ts = now - timedelta(milliseconds=spacing_ms * (n_readings - 1 - i))
         cloud_readings.append({
             "sensor_mac": mac,
             "sensor_kind": reading.get("kind", reading.get("sensor_kind", "bio_signal")),
             "value": reading.get("value", 0.0),
-            "unit": reading.get("unit", "V"),
+            "unit": reading.get("unit", "mV"),
             "timestamp": ts.isoformat(),
         })
 
