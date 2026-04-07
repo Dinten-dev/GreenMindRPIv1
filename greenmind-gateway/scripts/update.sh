@@ -2,7 +2,7 @@
 set -e
 
 APP_NAME="greenmind-gateway"
-INSTALL_DIR="/var/lib/$APP_NAME"
+INSTALL_DIR="/opt/greenmind/gateway"
 SERVICE_NAME="$APP_NAME.service"
 
 echo "Updating $APP_NAME..."
@@ -14,12 +14,14 @@ SRC_ROOT="$SCRIPT_DIR/.."
 echo "Stopping service..."
 systemctl stop "$SERVICE_NAME"
 
-# Update Code
-echo "Updating code..."
-cp "$SRC_ROOT/src/gateway.py" "$INSTALL_DIR/src/"
+# Update code
+echo "Updating source code..."
+cp -r "$SRC_ROOT/src/" "$INSTALL_DIR/src/"
+cp "$SRC_ROOT/requirements.txt" "$INSTALL_DIR/requirements.txt"
 
-# Ensure Venv permissions are correct (sometimes messed up by manual edits)
-chown -R greenmind:greenmind "$INSTALL_DIR"
+# Reinstall dependencies (in case requirements changed)
+echo "Updating dependencies..."
+"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
 
 # Start service
 echo "Starting service..."

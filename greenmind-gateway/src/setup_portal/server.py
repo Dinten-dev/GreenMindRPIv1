@@ -116,7 +116,7 @@ async def _run_provisioning(store, ssid, password, pairing_code, gateway_name, s
             data = resp.json()
             gateway_id = data["gateway_id"]
             api_key = data["api_key"]
-            greenhouse_id = data.get("greenhouse_id", "")
+            zone_id = data.get("zone_id", "")
 
     except httpx.HTTPError as exc:
         logger.error("[E-202] Cloud connection failed: %s", exc)
@@ -127,7 +127,7 @@ async def _run_provisioning(store, ssid, password, pairing_code, gateway_name, s
     store.store_credentials(
         api_key=api_key,
         gateway_id=gateway_id,
-        greenhouse_id=greenhouse_id,
+        zone_id=zone_id,
         hardware_id=settings.hardware_id,
         server_url=server_url,
     )

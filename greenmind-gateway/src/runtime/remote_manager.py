@@ -114,13 +114,14 @@ async def _execute_command(cmd: dict, credentials: dict) -> None:
         target_mac = cmd.get("mac_address", "")
         if not target_mac:
             return
-            
+
         ip = sensor_ips.get(target_mac)
         if ip:
             logger.info("Sending DELETE command to sensor %s at %s", target_mac, ip)
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    await client.post(f"http://{ip}/provision", content="DELETE /provision HTTP/1.1\r\n\r\n")
+                    resp = await client.delete(f"http://{ip}/")
+                    logger.info("Sensor %s DELETE response: %d", target_mac, resp.status_code)
             except Exception as e:
                 logger.error("Failed to delete sensor %s via HTTP: %s", target_mac, e)
         else:

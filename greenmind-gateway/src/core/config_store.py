@@ -56,7 +56,7 @@ class SecretStore:
         return {
             "api_key": data["api_key"],
             "gateway_id": data["gateway_id"],
-            "greenhouse_id": data.get("greenhouse_id", ""),
+            "zone_id": data.get("zone_id", data.get("greenhouse_id", "")),
             "hardware_id": data.get("hardware_id", ""),
             "server_url": data.get("server_url", ""),
         }
@@ -65,7 +65,7 @@ class SecretStore:
         self,
         api_key: str,
         gateway_id: str,
-        greenhouse_id: str,
+        zone_id: str,
         hardware_id: str,
         server_url: str,
     ) -> None:
@@ -73,7 +73,7 @@ class SecretStore:
         data = self.load()
         data["api_key"] = api_key
         data["gateway_id"] = gateway_id
-        data["greenhouse_id"] = greenhouse_id
+        data["zone_id"] = zone_id
         data["hardware_id"] = hardware_id
         data["server_url"] = server_url
         self.save(data)
