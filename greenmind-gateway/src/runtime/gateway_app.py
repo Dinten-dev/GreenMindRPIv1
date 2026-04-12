@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from src.persistence.database import init_db
 from src.runtime.heartbeat import heartbeat_loop
 from src.runtime.ingest_api import router as ingest_router
+from src.runtime.biosignal_proxy import router as biosignal_router
 from src.runtime.udp_discovery import udp_discovery_server
 from src.runtime.remote_manager import remote_manager_loop
 from src.runtime.upload_worker import upload_loop
@@ -45,6 +46,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GreenMind Edge Runtime", lifespan=lifespan)
 app.include_router(ingest_router, prefix="/api/v1")
+app.include_router(biosignal_router, prefix="/api/v1/biosignal")
 
 
 async def run_gateway(credentials: dict, port: int = 80) -> None:
