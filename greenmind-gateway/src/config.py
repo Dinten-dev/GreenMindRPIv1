@@ -40,6 +40,7 @@ class Settings(BaseSettings):
 
     # Cloud backend
     cloud_api_url: str = "https://api.greenmind.xyz/api/v1"
+    firmware_api_url: str = "https://firmware.green-mind.ch/api/v1"
 
     # Intervals (seconds)
     upload_interval: int = 10
@@ -48,6 +49,8 @@ class Settings(BaseSettings):
     # Persistence
     db_path: str = "/opt/greenmind/data/queue.db"
     secrets_path: str = "/opt/greenmind/data/secrets.json"
+    ota_db_path: str = "/opt/greenmind/data/ota.db"
+    firmware_dir: str = "/opt/greenmind/data/firmware"
 
     # Logging
     log_dir: str = "/opt/greenmind/data/logs"
@@ -59,6 +62,9 @@ class Settings(BaseSettings):
     # WAV archival
     wav_dir: str = "/opt/greenmind/data/wav"
     wav_chunk_minutes: int = 10
+
+    # Local OTA Server
+    ota_port: int = 8080
 
     # Hardware (auto-detected, overridable)
     hardware_id: str = ""

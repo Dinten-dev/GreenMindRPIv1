@@ -19,6 +19,8 @@ from src.runtime.udp_discovery import udp_discovery_server
 from src.runtime.remote_manager import remote_manager_loop
 from src.runtime.upload_worker import upload_loop
 from src.runtime.wav_uploader import upload_loop as wav_upload_loop
+from src.ota.cloud_sync import cloud_sync_worker
+from src.ota.local_server import router as ota_router
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(remote_manager_loop(_credentials), name="remote_manager"),
         asyncio.create_task(udp_discovery_server(), name="udp_discovery"),
         asyncio.create_task(wav_upload_loop(_credentials), name="wav_uploader"),
+        asyncio.create_task(cloud_sync_worker(), name="cloud_sync_worker"),
     ]
     logger.info("Background workers started: %s", [t.get_name() for t in tasks])
     yield
@@ -47,6 +50,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="GreenMind Edge Runtime", lifespan=lifespan)
 app.include_router(ingest_router, prefix="/api/v1")
 app.include_router(biosignal_router, prefix="/api/v1/biosignal")
+app.include_router(ota_router, prefix="/api/v1")
 
 
 async def run_gateway(credentials: dict, port: int = 80) -> None:
