@@ -1,0 +1,9 @@
+# /etc/sudoers.d/greenmind-agent
+# Minimal privileges for the GreenMind update agent.
+# Only allows restarting the gateway service and rebooting.
+# No general root access. No shell execution.
+
+greenmind-agent ALL=(root) NOPASSWD: /usr/bin/systemctl restart greenmind-gateway
+greenmind-agent ALL=(root) NOPASSWD: /usr/bin/systemctl status greenmind-gateway
+greenmind-agent ALL=(root) NOPASSWD: /usr/bin/systemctl is-active greenmind-gateway
+greenmind-agent ALL=(root) NOPASSWD: /usr/sbin/reboot

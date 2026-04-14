@@ -1,0 +1,32 @@
+[Unit]
+Description=GreenMind Update Agent
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=greenmind-agent
+Group=greenmind-agent
+WorkingDirectory=/opt/greenmind/agent
+ExecStart=/opt/greenmind/agent/venv/bin/python greenmind_agent.py
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=greenmind-agent
+
+# Hardening — agent needs write to /opt/greenmind/* and /tmp for downloads
+NoNewPrivileges=false
+ProtectSystem=strict
+ReadWritePaths=/opt/greenmind /tmp
+ProtectHome=yes
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

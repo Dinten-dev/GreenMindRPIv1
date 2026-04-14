@@ -1,6 +1,6 @@
 # GreenMind Raspberry Pi Gateway
 
-> Production-ready edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes at 380 Hz, archives raw data as WAV files, buffers aggregates locally in SQLite, and uploads to the cloud backend.
+> Production-ready edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes at 380 Hz, archives raw data as WAV files, buffers aggregates locally in SQLite, and uploads to the cloud backend. Includes a **desired-state update agent** for secure over-the-air remote management.
 
 ---
 
@@ -32,6 +32,9 @@ Boot → is provisioned?
                    ├── WAV Uploader (completed WAV → Cloud MinIO)
                    ├── Heartbeat Worker (60s → Cloud telemetry)
                    └── Remote Manager (command polling)
+
+Update Agent (separate systemd service, runs as greenmind-agent user):
+    └── Poll Cloud → Compare Desired State → Download → Verify → Apply → Healthcheck → Report
 ```
 
 ---
@@ -78,6 +81,16 @@ The gateway reboots into runtime mode, starts accepting ESP32 sensor data, and u
 | POST | `/api/v1/wav/upload` | X-Api-Key | Upload completed WAV file (multipart) |
 | GET | `/api/v1/gateways/{id}/commands` | X-Api-Key | Poll remote commands |
 
+### Agent → Cloud Endpoints (OTA)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/v1/gateway/desired-state` | X-Api-Key | Poll desired app/config/agent version |
+| POST | `/api/v1/gateway/state-report` | X-Api-Key | Report app version, disk, health, status |
+| POST | `/api/v1/gateway/command-result` | X-Api-Key | Report command execution result |
+| GET | `/api/v1/gateway/releases/{id}/download` | X-Api-Key | Download release tarball |
+| GET | `/api/v1/gateway/configs/{id}/download` | X-Api-Key | Download config JSON |
+
 ---
 
 ## Error Codes
@@ -92,11 +105,57 @@ The gateway reboots into runtime mode, starts accepting ESP32 sensor data, and u
 
 ## Remote Management
 
-### Reboot
-The cloud can send a `reboot` command via `GET /gateways/{id}/commands`. The gateway polls every 60s and executes `sudo reboot` when received.
+GreenMind gateways are managed remotely via a **desired-state agent** that runs as a separate systemd service.
 
-### Service Restart
-Cloud can send `restart_service` to execute `sudo systemctl restart greenmind-gateway`.
+### Update Agent
+
+The agent (`greenmind-agent.service`) polls the cloud every 30 seconds, compares the current state with the desired state, and applies updates.
+
+#### Supported Operations
+| Command | Description |
+|---------|-------------|
+| `restart_gateway_service` | Restart the gateway service |
+| `reload_gateway_config` | Reload configuration |
+| `enable_maintenance_mode` | Pause updates and data collection |
+| `disable_maintenance_mode` | Resume normal operation |
+| `controlled_reboot` | Controlled system reboot (requires update window) |
+
+#### OTA Update Flow
+1. Admin uploads a release tarball to the cloud
+2. Admin starts a **staged rollout** (canary → early → stable)
+3. Agent downloads the tarball to `/tmp/greenmind_release_*`
+4. Agent verifies **SHA256** hash and optional **Ed25519 signature**
+5. Agent extracts to `/opt/greenmind/releases/<version>/`
+6. Agent creates venv and installs from **bundled wheels** (offline, no PyPI)
+7. **Atomic symlink switch**: `/opt/greenmind/current` → new release
+8. Agent restarts `greenmind-gateway.service`
+9. Agent runs **6-point healthcheck** (process, HTTP, config, disk, symlink)
+10. On failure → **automatic rollback** to previous release
+
+#### Security Model
+| Feature | Implementation |
+|---------|----------------|
+| **Privilege separation** | Agent runs as `greenmind-agent` user (non-root) |
+| **Sudo whitelist** | Only `systemctl restart/reboot`, via `/etc/sudoers.d/greenmind-agent` |
+| **Artifact integrity** | SHA256 verification on every download |
+| **Code signing** | Ed25519 signature verification (optional, enforcement-ready) |
+| **Offline install** | `pip install --no-index --find-links ./wheels` |
+| **Atomic updates** | Symlink-based release switch |
+| **Disk pre-check** | Requires `file_size * 2 + 100 MB` free |
+| **Concurrency lock** | Global `fcntl.flock()` prevents parallel operations |
+| **Update windows** | Configurable per-gateway (download anytime, apply in window) |
+| **Path traversal protection** | Tarball members validated before extraction |
+
+#### Healthcheck Suite
+The agent runs 5 checks after every update:
+1. **Process**: `systemctl is-active greenmind-gateway` = `active`
+2. **HTTP API**: `GET http://localhost/api/v1/health` returns 200
+3. **Config valid**: `/opt/greenmind/config/active.json` exists and parses as JSON
+4. **Disk**: > 100 MB free
+5. **Symlink**: `/opt/greenmind/current` points to an existing directory
+
+### Reboot
+The cloud can send a `controlled_reboot` command. The agent validates the update window and executes `sudo reboot`.
 
 ### Factory Reset
 On the Raspberry Pi:
@@ -209,10 +268,20 @@ greenmind-gateway/
 ├── .env                    # Runtime configuration
 ├── .env.example            # Template (safe to commit)
 ├── requirements.txt        # Python dependencies
+├── agent/                  # OTA Update Agent
+│   ├── greenmind_agent.py  # Main agent (~700 lines)
+│   └── tests/
+│       └── test_agent.py   # Agent unit tests (14 tests)
 ├── scripts/
-│   └── install.sh          # Automated installer
+│   ├── install.sh          # Gateway automated installer
+│   ├── deploy_remote.sh    # Remote deploy (SSH/SCP)
+│   └── deploy_agent.sh     # Agent deploy (expect-based)
 ├── systemd/
-│   └── greenmind-gateway.service
+│   ├── greenmind-gateway.service  # Gateway systemd unit (symlink-based)
+│   ├── greenmind-agent.service    # Agent systemd unit (User=greenmind-agent)
+│   └── greenmind-agent-sudoers    # Restricted sudo whitelist
+├── docs/
+│   └── RPI_DEPLOYMENT.md   # Detailed deployment guide
 └── src/
     ├── main.py             # Boot loader (setup vs runtime)
     ├── config.py           # Pydantic settings
@@ -237,6 +306,40 @@ greenmind-gateway/
         ├── wav_uploader.py # Completed WAV → Cloud MinIO
         ├── heartbeat.py    # Health telemetry
         └── remote_manager.py # Remote commands
+```
+
+### Directory Layout on Raspberry Pi
+
+```
+/opt/greenmind/
+├── current → releases/1.2.0  # Atomic symlink to active release
+├── releases/                 # Release versions (keep last 3)
+│   ├── 1.0.0/
+│   ├── 1.1.0/
+│   └── 1.2.0/
+│       ├── src/
+│       ├── wheels/           # Pre-built Python wheels
+│       ├── requirements.lock
+│       ├── venv/             # Per-release virtualenv
+│       └── .release_meta.json
+├── agent/
+│   ├── greenmind_agent.py    # Update agent
+│   ├── venv/                 # Agent virtualenv
+│   └── state.json            # Agent state persistence
+├── config/
+│   ├── active.json → versions/v3.json  # Atomic config symlink
+│   └── versions/
+│       ├── v1.json
+│       ├── v2.json
+│       └── v3.json
+├── backups/
+│   └── last_good_config.json
+├── data/
+│   ├── secrets.json          # Gateway credentials (640 root:greenmind-agent)
+│   ├── queue.db              # SQLite upload queue
+│   ├── logs/
+│   └── wav/                  # Pending WAV uploads
+└── gateway/                  # Legacy (pre-OTA) install path
 ```
 
 ---
