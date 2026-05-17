@@ -1,1 +1,0 @@
-"""Plant Wiki Gateway package."""
