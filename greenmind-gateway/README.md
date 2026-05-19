@@ -6,17 +6,57 @@
 
 ## Quick Start
 
-```bash
-# 1. Flash Raspberry Pi OS Lite (Bookworm) and enable SSH
-# 2. Clone and install
-git clone <repo-url> /opt/greenmind
-sudo bash /opt/greenmind/gateway/scripts/install.sh
+### One-Liner Install
 
-# 3. Start the service
-sudo systemctl start greenmind-gateway
+Flash **Raspberry Pi OS Lite (Bookworm, 64-bit)**, enable SSH, then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Dinten-dev/GreenMindRPIv1/main/greenmind-gateway/install-gateway.sh | sudo bash
 ```
 
-The gateway will automatically enter **Setup Mode** on first boot.
+This single command performs the entire setup — from system updates to running services.
+
+### What the Installer Does
+
+| Step | Action | Details |
+|------|--------|---------|
+| **1** | System Update | `apt update && apt upgrade -y` (non-interactive) |
+| **2** | Dependencies | python3, python3-pip, python3-venv, git, curl, jq, sqlite3, NetworkManager, logrotate |
+| **3** | System Users | Creates `greenmind` (gateway) + `greenmind-agent` (OTA), both non-login |
+| **4** | Clone Repository | Clones to `/opt/greenmind/repo`, creates initial release with atomic symlink |
+| **5** | Python venv | Creates virtualenv, installs `requirements.txt` |
+| **6** | OTA Agent | Installs agent code + venv + restricted sudoers whitelist |
+| **7** | Directories | Creates data/logs/wav/config/releases/backups with hardened permissions |
+| **8** | Environment | Interactive `.env` configuration (or defaults in curl-pipe mode) |
+| **9** | systemd Services | Installs + enables `greenmind-gateway.service` + `greenmind-agent.service` |
+| **10** | Log Rotation + Cron | logrotate (14 days, 50 MB max) + daily OTA agent restart at 03:00 |
+| **11** | Start Services | Starts both services, prints colored status summary |
+
+### After Installation
+
+1. Connect to the WiFi access point: **GreenMind-Gateway-XXXX**
+2. Open `http://10.42.0.1` in your browser
+3. Enter your WiFi credentials and the 6-character pairing code from the dashboard
+4. The gateway registers automatically and begins streaming sensor data
+
+### Manual Install (Alternative)
+
+```bash
+# Clone and install manually
+git clone https://github.com/Dinten-dev/GreenMindRPIv1.git /opt/greenmind/repo
+sudo bash /opt/greenmind/repo/greenmind-gateway/install-gateway.sh
+```
+
+> **Note:** The installer is **idempotent** — it can be run multiple times safely. Re-running will pull the latest code, update dependencies, and restart services without data loss.
+
+### Prerequisites
+
+- **Hardware:** Raspberry Pi 4/5 (or Zero 2 W) with ARM64
+- **OS:** Raspberry Pi OS Lite — Debian Bookworm, 64-bit
+- **Network:** Internet connection for initial setup
+- **Disk:** ≥ 500 MB free on `/opt`
+
+> ⚠️ The installer checks for ARM architecture and warns on non-Pi systems.
 
 ---
 
@@ -229,6 +269,72 @@ The gateway archives raw high-frequency sensor data as WAV files for later model
 
 ---
 
+## Environment Variables
+
+All configuration is via the `.env` file at `/opt/greenmind/current/.env` (created by the installer):
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLOUD_API_URL` | Cloud backend URL (without trailing slash) | `https://green-mind.ch/api/v1` |
+| `DB_PATH` | SQLite upload queue path | `/opt/greenmind/data/queue.db` |
+| `SECRETS_PATH` | Gateway credentials (auto-generated during pairing) | `/opt/greenmind/data/secrets.json` |
+| `OTA_DB_PATH` | OTA state database | `/opt/greenmind/data/ota.db` |
+| `FIRMWARE_DIR` | Local firmware storage | `/opt/greenmind/data/firmware` |
+| `LOG_DIR` | Log file directory | `/opt/greenmind/data/logs` |
+| `LOG_LEVEL` | Logging verbosity | `INFO` |
+| `UPLOAD_INTERVAL` | Cloud upload interval (seconds) | `10` |
+| `HEARTBEAT_INTERVAL` | Health telemetry interval (seconds) | `60` |
+| `MAX_QUEUE_SIZE` | Maximum queued uploads before dropping | `100000` |
+| `WAV_DIR` | WAV archive directory | `/opt/greenmind/data/wav` |
+| `WAV_CHUNK_MINUTES` | WAV file chunk duration (minutes) | `10` |
+
+> 🔒 The `.env` file is secured with `chmod 640 root:greenmind` — only root and the gateway user can read it. **Never commit `.env` files with real credentials.**
+
+---
+
+## Security
+
+### System Users & Permissions
+
+| User | Purpose | Privileges |
+|------|---------|------------|
+| `greenmind` | Gateway service (data ingestion, WAV, upload) | Non-login system user, owns `/opt/greenmind/data` |
+| `greenmind-agent` | OTA update agent | Non-login, restricted sudo (see below) |
+| `root` | Gateway service execution | Required for `nmcli` AP management |
+
+### Restricted Sudo (Agent)
+
+The OTA agent has a minimal sudoers whitelist (`/etc/sudoers.d/greenmind-agent`):
+
+```
+greenmind-agent ALL=(root) NOPASSWD: /usr/bin/systemctl restart greenmind-gateway
+greenmind-agent ALL=(root) NOPASSWD: /usr/bin/systemctl status greenmind-gateway
+greenmind-agent ALL=(root) NOPASSWD: /usr/bin/systemctl is-active greenmind-gateway
+greenmind-agent ALL=(root) NOPASSWD: /usr/sbin/reboot
+```
+
+No shell access. No general root privileges.
+
+### File Permissions
+
+| Path | Permissions | Owner |
+|------|-------------|-------|
+| `/opt/greenmind/current/.env` | `640` | `root:greenmind` |
+| `/opt/greenmind/data/secrets.json` | `640` | `root:greenmind` |
+| `/opt/greenmind/data/` | `750` | `greenmind:greenmind` |
+| `/opt/greenmind/data/logs/` | `750` | `greenmind:greenmind` |
+| `/etc/sudoers.d/greenmind-agent` | `440` | `root:root` |
+
+### Log Rotation
+
+Configured via `/etc/logrotate.d/greenmind-gateway`:
+- **Retention:** 14 days
+- **Max size:** 50 MB per file
+- **Compression:** gzip (delayed)
+- **Permissions:** `640 greenmind:greenmind`
+
+---
+
 ## Troubleshooting
 
 ### Gateway stuck in Setup Mode
@@ -250,13 +356,27 @@ The gateway archives raw high-frequency sensor data as WAV files for later model
 - Verify heartbeat: `sudo journalctl -u greenmind-gateway | grep heartbeat`
 - Check upload worker logs for errors
 
-### View logs
+### Installation issues
+- Re-run the installer (idempotent): `sudo bash /opt/greenmind/repo/greenmind-gateway/install-gateway.sh`
+- Check disk space: `df -h /opt`
+- Verify Python version: `python3 --version` (requires 3.11+)
+
+### Service management
 ```bash
-# Live journal
+# Service status
+sudo systemctl status greenmind-gateway
+sudo systemctl status greenmind-agent
+
+# Live journal logs
 sudo journalctl -u greenmind-gateway -f
+sudo journalctl -u greenmind-agent -f
 
 # Rotating log files
 cat /opt/greenmind/data/logs/gateway.log
+
+# Restart services
+sudo systemctl restart greenmind-gateway
+sudo systemctl restart greenmind-agent
 ```
 
 ---
@@ -265,7 +385,7 @@ cat /opt/greenmind/data/logs/gateway.log
 
 ```
 greenmind-gateway/
-├── .env                    # Runtime configuration
+├── install-gateway.sh      # 🚀 One-liner production installer (curl-pipe-bash)
 ├── .env.example            # Template (safe to commit)
 ├── requirements.txt        # Python dependencies
 ├── agent/                  # OTA Update Agent
@@ -273,13 +393,15 @@ greenmind-gateway/
 │   └── tests/
 │       └── test_agent.py   # Agent unit tests (14 tests)
 ├── scripts/
-│   ├── install.sh          # Gateway automated installer
+│   ├── install.sh          # Legacy installer (use install-gateway.sh instead)
 │   ├── deploy_remote.sh    # Remote deploy (SSH/SCP)
-│   └── deploy_agent.sh     # Agent deploy (expect-based)
+│   └── update.sh           # Manual code update
 ├── systemd/
 │   ├── greenmind-gateway.service  # Gateway systemd unit (symlink-based)
 │   ├── greenmind-agent.service    # Agent systemd unit (User=greenmind-agent)
 │   └── greenmind-agent-sudoers    # Restricted sudo whitelist
+├── config/
+│   └── config.env.example  # Legacy config template
 ├── docs/
 │   └── RPI_DEPLOYMENT.md   # Detailed deployment guide
 └── src/
