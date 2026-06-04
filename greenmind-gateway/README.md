@@ -11,7 +11,7 @@
 Flash **Raspberry Pi OS Lite (Bookworm, 64-bit)**, enable SSH, then run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dinten-dev/GreenMindRPIv1/main/greenmind-gateway/install-gateway.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Dinten-dev/GreenMindRPIv1/master/greenmind-gateway/install-gateway.sh | sudo bash
 ```
 
 This single command performs the entire setup — from system updates to running services.
