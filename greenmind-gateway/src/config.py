@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Cloud backend
     cloud_api_url: str = "https://green-mind.ch/api/v1"
-    firmware_api_url: str = "https://firmware.green-mind.ch/api/v1"
+    firmware_api_url: str = "https://green-mind.ch/api/v1"
 
     # Intervals (seconds)
     upload_interval: int = 10
