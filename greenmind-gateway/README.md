@@ -58,6 +58,26 @@ sudo bash /opt/greenmind/repo/greenmind-gateway/install-gateway.sh
 
 > ⚠️ The installer checks for ARM architecture and warns on non-Pi systems.
 
+### ⚡ Stromversorgung der Sensoren (WICHTIG)
+
+> **Jeder ESP32-Sensor MUSS über ein eigenes USB-Netzteil versorgt werden.**
+
+Die Sensoren dürfen **nicht** an den USB-Ports des Raspberry Pi angeschlossen werden. Durch die gemeinsame Masse (Ground) entsteht eine 50-Hz-Masseschleife mit der Netzstromversorgung, die den AD8232-Verstärker in Sättigung treibt (Railing). Das Biosignal wird dadurch vollständig mit Netzbrumm überlagert und ist nicht verwertbar.
+
+```
+✅ RICHTIG                          ❌ FALSCH
+                                    
+Steckdose ─── Netzteil A ─── RPi    Steckdose ─── Netzteil ─── RPi
+Steckdose ─── Netzteil B ─── ESP32              └── USB ──── ESP32
+                                                    ↑ 50 Hz Masseschleife!
+```
+
+**Empfohlene Netzteile:**
+- Sensor: USB 5V / 500 mA (beliebiger USB-Adapter)
+- Raspberry Pi: offizielles RPi-Netzteil (5V / 3A)
+
+> Dieses Problem wurde im Pilotbetrieb (Gloor, Juni 2026) identifiziert. Die neue Firmware v1.0.2 enthält zusätzlich einen digitalen 50-Hz-Notchfilter als Absicherung, die physische Trennung der Stromversorgung bleibt aber zwingend.
+
 ---
 
 ## Architecture
