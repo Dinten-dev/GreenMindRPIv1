@@ -448,6 +448,9 @@ configure_environment() {
 # Cloud backend URL (without trailing slash)
 CLOUD_API_URL=${api_url}
 
+# Firmware OTA sync URL (same backend, separate setting for flexibility)
+FIRMWARE_API_URL=${api_url}
+
 # Local persistence paths
 DB_PATH=${DATA_DIR}/queue.db
 SECRETS_PATH=${DATA_DIR}/secrets.json
