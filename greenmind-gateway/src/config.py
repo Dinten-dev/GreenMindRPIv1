@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     firmware_api_url: str = "https://green-mind.ch/api/v1"
 
     # Intervals (seconds)
-    upload_interval: int = 10
+    upload_interval: int = 1
     heartbeat_interval: int = 60
 
     # Persistence
