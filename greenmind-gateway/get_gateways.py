@@ -1,7 +1,11 @@
-import requests
+import os
 import sys
 
-TOKEN = "<REDACTED_JWT>"
+import requests
+
+TOKEN = os.environ.get("GREENMIND_TOKEN", "")
+if not TOKEN:
+    sys.exit("Error: Set GREENMIND_TOKEN environment variable")
 BASE_URL = "https://green-mind.ch/api/v1/admin"
 
 headers = {"Authorization": f"Bearer {TOKEN}"}

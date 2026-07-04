@@ -1,7 +1,11 @@
-import requests
+import os
 import sys
 
-TOKEN = "<REDACTED_JWT>"
+import requests
+
+TOKEN = os.environ.get("GREENMIND_TOKEN", "")
+if not TOKEN:
+    sys.exit("Error: Set GREENMIND_TOKEN environment variable")
 BASE_URL = "https://green-mind.ch/api/v1/admin"
 RELEASE_ID = "a983a198-0698-40bf-94b1-91abc20eee38"
 
@@ -20,4 +24,3 @@ data = {
 }
 res = requests.post(f"{BASE_URL}/gateway-rollout", json=data, headers=headers)
 print(res.status_code, res.text)
-
