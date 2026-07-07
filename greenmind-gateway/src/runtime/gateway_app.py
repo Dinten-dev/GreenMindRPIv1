@@ -21,6 +21,7 @@ from src.runtime.upload_worker import upload_loop
 from src.runtime.wav_uploader import upload_loop as wav_upload_loop
 from src.ota.cloud_sync import cloud_sync_worker
 from src.ota.local_server import router as ota_router
+from src.provisioning.ble_worker import provisioning_loop
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(udp_discovery_server(), name="udp_discovery"),
         asyncio.create_task(wav_upload_loop(_credentials), name="wav_uploader"),
         asyncio.create_task(cloud_sync_worker(), name="cloud_sync_worker"),
+        asyncio.create_task(provisioning_loop(_credentials), name="provisioning_worker"),
     ]
     logger.info("Background workers started: %s", [t.get_name() for t in tasks])
     yield
