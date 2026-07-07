@@ -92,7 +92,7 @@ class ProvisioningWorker:
         
         if success:
             logger.info(f"Provisioning job {job_id} completed successfully")
-            await self._update_job_status(session, job_id, "done")
+            await self._update_job_status(session, job_id, "completed")
         else:
             logger.error(f"Provisioning job {job_id} failed")
             await self._update_job_status(session, job_id, "failed")
