@@ -32,6 +32,7 @@ _credentials: dict = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start background workers on app startup, cancel on shutdown."""
+    init_db()
     tasks = [
         asyncio.create_task(upload_loop(_credentials), name="upload_worker"),
         asyncio.create_task(heartbeat_loop(_credentials), name="heartbeat_worker"),
@@ -46,6 +47,9 @@ async def lifespan(app: FastAPI):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    from src.runtime.wav_writer import close_all
+    closed_wavs = close_all()
+    logger.info("Closed %d active WAV writers.", len(closed_wavs))
     logger.info("Background workers stopped.")
 
 

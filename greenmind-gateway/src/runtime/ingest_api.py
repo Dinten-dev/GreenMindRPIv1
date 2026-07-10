@@ -7,7 +7,7 @@ in the SQLite queue for later upload to the cloud.
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from sqlalchemy.orm import Session
 
 from src.config import settings
@@ -22,16 +22,12 @@ router = APIRouter()
 sensor_ips = {}  # Cache MAC to IP mapping for reverse control
 
 @router.post("/ingest")
-async def ingest_data(request: Request, db: Session = Depends(get_db)):
+def ingest_data(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
     """Receive sensor data from ESP32 and queue for cloud upload.
 
     High-frequency data (380 Hz) is written to WAV files locally.
     A single aggregate reading (mean value) is queued for cloud upload.
     """
-    try:
-        payload = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
     # Guard against queue overflow
     pending = db.query(IngestJob).filter(IngestJob.status == "QUEUED").count()

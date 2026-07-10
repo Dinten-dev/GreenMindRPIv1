@@ -7,75 +7,75 @@ import threading
 import argparse
 
 # Default Configuration
-GATEWAY_URL = "http://localhost:8081"
-STATION_ID = "station-01"
-PLANT_ID = "test-plant-01" 
-SENSOR_ID = "esp32-sim-01"
-AUTH_TOKEN = None
+GATEWAY_URL = "http://localhost:8000"
 
-def generate_plant_signal():
+def generate_payload(mac):
+    # 0.5s chunks at 380Hz => 190 samples
     return {
-        "station_id": STATION_ID,
-        "plant_id": PLANT_ID,
-        "sensor_id": SENSOR_ID,
-        "start_time": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-        "dt_seconds": 1.0,
-        "values_uV": [random.uniform(500, 800) for _ in range(10)],
-        "quality": [1 for _ in range(10)],
-        "request_id": str(uuid.uuid4())
-    }
-
-def generate_env_data():
-    return {
-        "station_id": STATION_ID,
-        "plant_id": PLANT_ID,
-        "sensor_id": SENSOR_ID,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-        "temperature_c": random.uniform(20, 25),
-        "humidity_pct": random.uniform(40, 60),
-        "soil_moisture_raw": random.randint(2000, 3000),
-        "light_lux": random.uniform(100, 500)
+        "mac_address": mac,
+        "sample_rate": 380,
+        "readings": [{"kind": "bio_signal", "value": random.uniform(0, 3300), "unit": "mV"} for _ in range(190)]
     }
 
 def send_data(endpoint, payload):
     try:
         url = f"{GATEWAY_URL}{endpoint}"
-        headers = {}
-        if AUTH_TOKEN:
-            headers["Authorization"] = f"Bearer {AUTH_TOKEN}"
-            
         start = time.time()
-        resp = requests.post(url, json=payload, headers=headers, timeout=2)
+        resp = requests.post(url, json=payload, timeout=2)
         elapsed = (time.time() - start) * 1000
-        print(f"[{resp.status_code}] {endpoint} ({elapsed:.1f}ms)")
         if resp.status_code != 200:
-            print(f"  Error: {resp.text}")
+            print(f"[{resp.status_code}] Error: {resp.text}")
+        return elapsed
+    except requests.exceptions.Timeout:
+        return -1
     except Exception as e:
-        print(f"  Failed: {e}")
+        print(f"Failed: {e}")
+        return -2
 
-def run_sim(rate_hz=1):
-    print(f"Starting ESP32 Simulation -> {GATEWAY_URL}")
-    print(f"Station: {STATION_ID}")
-    
-    while True:
-        signal = generate_plant_signal()
-        send_data("/gw/ingest/plant-signal-1hz", signal)
-
-        if random.random() < 0.2:
-            env = generate_env_data()
-            send_data("/gw/ingest/env", env)
-
+def run_sim(mac, rate_hz=2, duration_s=10):
+    # rate_hz = 2 means 2 times per second (190 samples each) -> 380Hz
+    latencies = []
+    end_time = time.time() + duration_s
+    while time.time() < end_time:
+        payload = generate_payload(mac)
+        lat = send_data("/api/v1/ingest", payload)
+        if lat > 0:
+            latencies.append(lat)
         time.sleep(1.0 / rate_hz)
+    return latencies
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default=GATEWAY_URL, help="Gateway URL")
-    parser.add_argument("--rate", type=float, default=1.0, help="Rate in Hz")
-    parser.add_argument("--station", default=STATION_ID, help="Station ID")
-    parser.add_argument("--token", default=None, help="Auth Token")
+    parser.add_argument("--rate", type=float, default=2.0, help="Rate in Hz")
+    parser.add_argument("--duration", type=int, default=10, help="Test duration in seconds")
     args = parser.parse_args()
     
     GATEWAY_URL = args.url
-    STATION_ID = args.station
-    AUTH_TOKEN = args.token
-    run_sim(args.rate)
+    
+    macs = [f"00:11:22:33:44:{i:02x}" for i in range(8)]
+    print(f"Starting ESP32 Simulation -> {GATEWAY_URL} with 8 sensors for {args.duration}s")
+    
+    results = []
+    def worker(mac):
+        lats = run_sim(mac, args.rate, args.duration)
+        results.extend(lats)
+        
+    threads = []
+    for m in macs:
+        t = threading.Thread(target=worker, args=(m,))
+        t.start()
+        threads.append(t)
+        
+    for t in threads:
+        t.join()
+        
+    if not results:
+        print("No successful requests.")
+    else:
+        results.sort()
+        p95 = results[int(len(results) * 0.95)]
+        avg = sum(results) / len(results)
+        print(f"Requests: {len(results)}")
+        print(f"Average Latency: {avg:.1f}ms")
+        print(f"P95 Latency: {p95:.1f}ms")
