@@ -34,10 +34,18 @@ def init_db() -> None:
 
     @event.listens_for(engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, _connection_record):
-        """Enable WAL mode for better concurrent access on the Pi."""
+        """Tune SQLite for high-frequency concurrent ingest on the Pi.
+
+        WAL lets the ingest writers and the drain worker proceed without blocking
+        each other; synchronous=NORMAL is durable under WAL but avoids an fsync on
+        every commit, which is the dominant per-batch cost on SD-card storage and
+        the main thing that lets one gateway sustain 10+ sensors.
+        """
         cursor = dbapi_conn.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA wal_autocheckpoint=1000")
         cursor.close()
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
