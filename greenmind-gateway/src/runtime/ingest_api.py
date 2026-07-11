@@ -41,7 +41,7 @@ def ingest_data(request: Request, payload: dict = Body(...), db: Session = Depen
         sensor_ips[mac] = request.client.host
 
     readings = payload.get("readings", [])
-    sample_rate = payload.get("sample_rate", 20)
+    sample_rate = payload.get("sample_rate", 380)
 
     # 1) Archive high-frequency raw data FIRST and unconditionally.
     samples_archived = 0
@@ -141,9 +141,17 @@ async def health(db: Session = Depends(get_db)):
     """Local health endpoint for diagnostics."""
     queued = db.query(IngestJob).filter(IngestJob.status == "QUEUED").count()
     failed = db.query(IngestJob).filter(IngestJob.status == "FAILED").count()
+    
+    from src.runtime.wav_writer import _writers
+    from src.runtime.wav_uploader import _find_completed_wavs
+    active_writers = len(_writers)
+    completed_wavs = len(_find_completed_wavs(settings.wav_dir))
+    
     return {
         "status": "ok",
         "hardware_id": settings.hardware_id,
         "queue_depth": queued,
         "failed_count": failed,
+        "active_wav_writers": active_writers,
+        "completed_wavs_pending": completed_wavs,
     }

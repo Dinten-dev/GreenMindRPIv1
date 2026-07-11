@@ -92,13 +92,16 @@ def test_rotation(tmp_path, monkeypatch):
     
     mac = "FF:EE:DD:CC:BB:AA"
     sample_rate = 380
-    chunk_samples = sample_rate * 60
     
-    # write chunk_samples + 10 to force rotation
-    total_samples = chunk_samples + 10
+    # First write opens the file at 12:00:01 (bucket 0)
+    rotated_path = wav_writer.write_samples(mac, [500.0] * 10, sample_rate)
+    assert rotated_path is None
     
-    # It should rotate and return the completed chunk path
-    rotated_path = wav_writer.write_samples(mac, [500.0] * total_samples, sample_rate)
+    # Advance time to cross the 1-minute bucket boundary
+    MockDatetime._current += timedelta(seconds=60)
+    
+    # Second write should trigger rotation
+    rotated_path = wav_writer.write_samples(mac, [500.0] * 10, sample_rate)
     
     assert rotated_path is not None
     assert os.path.exists(rotated_path)

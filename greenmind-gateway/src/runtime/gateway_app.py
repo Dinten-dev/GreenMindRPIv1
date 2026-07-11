@@ -23,7 +23,17 @@ from src.ota.cloud_sync import cloud_sync_worker
 from src.ota.local_server import router as ota_router
 from src.provisioning.ble_worker import provisioning_loop
 
+import atexit
+
 logger = logging.getLogger(__name__)
+
+def _force_flush_wavs():
+    from src.runtime.wav_writer import close_all
+    closed = close_all()
+    if closed:
+        logger.info("Crash-flush: Closed %d WAV writers.", len(closed))
+
+atexit.register(_force_flush_wavs)
 
 # Module-level reference set by run_gateway before uvicorn starts
 _credentials: dict = {}

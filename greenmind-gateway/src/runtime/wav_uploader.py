@@ -109,15 +109,9 @@ async def upload_loop(credentials: dict) -> None:
                         logger.warning("Skipping unparseable WAV: %s", filepath)
                         continue
 
-                    # Calculate end time from file duration
-                    file_size = filepath.stat().st_size
-                    # WAV header is 44 bytes, each sample is 2 bytes
-                    data_bytes = max(0, file_size - 44)
-                    n_samples = data_bytes // 2
-                    duration = n_samples / 380  # sample_rate
-                    from datetime import timedelta
-
-                    ended_at = meta["started_at"] + timedelta(seconds=duration)
+                    # Get end time from file modification time
+                    mtime_ts = filepath.stat().st_mtime
+                    ended_at = datetime.fromtimestamp(mtime_ts, tz=timezone.utc)
 
                     try:
                         with open(filepath, "rb") as f:

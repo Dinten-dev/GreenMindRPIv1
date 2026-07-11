@@ -140,8 +140,12 @@ class _SensorWriter:
                 self._open_new_chunk()
             else:
                 now = datetime.now(timezone.utc)
-                if self._started_at and (now - self._started_at).total_seconds() >= settings.wav_chunk_minutes * 60:
-                    completed_path = self._rotate()
+                if self._started_at:
+                    interval = settings.wav_chunk_minutes
+                    current_bucket = (now.hour * 60 + now.minute) // interval
+                    started_bucket = (self._started_at.hour * 60 + self._started_at.minute) // interval
+                    if current_bucket != started_bucket or now.date() != self._started_at.date():
+                        completed_path = self._rotate()
 
             # Batch-convert all samples to int16 in one pass
             frame_data = array.array("h", (int(max(0.0, min(mv, _MV_MAX)) * _SCALE) for mv in samples)).tobytes()
