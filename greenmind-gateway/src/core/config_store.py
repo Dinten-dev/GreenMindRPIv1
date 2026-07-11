@@ -21,9 +21,9 @@ class SecretStore:
             with open(self.filepath, "w") as fh:
                 json.dump({}, fh)
             try:
-                os.chmod(self.filepath, 0o600)
+                os.chmod(self.filepath, 0o640)
             except OSError as exc:
-                logger.warning("Failed to set chmod 600 on secrets file: %s", exc)
+                logger.warning("Failed to set chmod 640 on secrets file: %s", exc)
 
     def load(self) -> dict[str, Any]:
         try:
@@ -39,7 +39,7 @@ class SecretStore:
         with open(self.filepath, "w") as fh:
             json.dump(data, fh, indent=4)
         try:
-            os.chmod(self.filepath, 0o600)
+            os.chmod(self.filepath, 0o640)
         except OSError:
             pass
 

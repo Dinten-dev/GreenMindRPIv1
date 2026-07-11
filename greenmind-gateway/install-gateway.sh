@@ -373,11 +373,12 @@ create_directories() {
     chmod 750 "${DATA_DIR}"
 
     # Secrets file: readable by gateway + agent only
-    if [ -f "${DATA_DIR}/secrets.json" ]; then
-        chown root:"${SERVICE_USER}" "${DATA_DIR}/secrets.json"
-        chmod 640 "${DATA_DIR}/secrets.json"
-        info "Existing secrets.json permissions hardened"
+    if [ ! -f "${DATA_DIR}/secrets.json" ]; then
+        echo "{}" > "${DATA_DIR}/secrets.json"
     fi
+    chown "${SERVICE_USER}:${SERVICE_USER}" "${DATA_DIR}/secrets.json"
+    chmod 640 "${DATA_DIR}/secrets.json"
+    info "secrets.json permissions hardened"
 
     # Config directory
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${CONFIG_DIR}"

@@ -799,7 +799,7 @@ def main() -> None:
         sys.exit(1)
 
     # Determine cloud base URL — strip /api/v1 if already present in secrets
-    base_url = server_url.rstrip("/") if server_url else "https://firmware.green-mind.ch"
+    base_url = server_url.rstrip("/") if server_url else "https://green-mind.ch"
     for suffix in ("/api/v1", "/api/v1/"):
         if base_url.endswith(suffix.rstrip("/")):
             base_url = base_url[: -len(suffix.rstrip("/"))]
