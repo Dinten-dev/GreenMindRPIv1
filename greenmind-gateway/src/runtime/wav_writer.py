@@ -125,7 +125,6 @@ class _SensorWriter:
         self._started_at: datetime | None = None
         self._ntp_synced: bool = False
         self._sample_count = 0
-        self._chunk_samples = sample_rate * settings.wav_chunk_minutes * 60
         self._filepath: Path | None = None
 
     def write(self, samples: list[float]) -> str | None:
@@ -139,20 +138,15 @@ class _SensorWriter:
 
             if self._writer is None:
                 self._open_new_chunk()
+            else:
+                now = datetime.now(timezone.utc)
+                if self._started_at and (now - self._started_at).total_seconds() >= settings.wav_chunk_minutes * 60:
+                    completed_path = self._rotate()
 
             # Batch-convert all samples to int16 in one pass
-            remaining = samples
-            while remaining:
-                space = self._chunk_samples - self._sample_count
-                batch = remaining[:space]
-                remaining = remaining[space:]
-
-                frame_data = array.array("h", (int(max(0.0, min(mv, _MV_MAX)) * _SCALE) for mv in batch)).tobytes()
-                self._writer.writeframes(frame_data)
-                self._sample_count += len(batch)
-
-                if self._sample_count >= self._chunk_samples:
-                    completed_path = self._rotate()
+            frame_data = array.array("h", (int(max(0.0, min(mv, _MV_MAX)) * _SCALE) for mv in samples)).tobytes()
+            self._writer.writeframes(frame_data)
+            self._sample_count += len(samples)
 
             return completed_path
 
