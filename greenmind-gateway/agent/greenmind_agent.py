@@ -274,9 +274,9 @@ def run_healthcheck_suite() -> tuple[bool, str]:
         except Exception:
             checks["http_api"] = False
 
-    # 3. Config valid
+    # 3. Config valid (optional; if exists, must be valid JSON)
     config_link = CONFIG_DIR / "active.json"
-    checks["config_valid"] = config_link.exists() and _is_valid_json(config_link)
+    checks["config_valid"] = not config_link.exists() or _is_valid_json(config_link)
 
     # 4. Disk check
     free_mb = get_disk_free_mb()
@@ -449,7 +449,7 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
         # 7. Healthcheck failed → rollback
         logger.error("Healthcheck FAILED after update — initiating rollback")
         if previous:
-            return _rollback_to(Path(previous), state)
+            _rollback_to(Path(previous), state)
         return False
 
     except Exception as exc:

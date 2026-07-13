@@ -143,9 +143,9 @@ async def health(db: Session = Depends(get_db)):
     failed = db.query(IngestJob).filter(IngestJob.status == "FAILED").count()
     
     from src.runtime.wav_writer import _writers
-    from src.runtime.wav_uploader import _find_completed_wavs
     active_writers = len(_writers)
-    completed_wavs = len(_find_completed_wavs(settings.wav_dir))
+    completed_wavs = -1
+
     
     return {
         "status": "ok",

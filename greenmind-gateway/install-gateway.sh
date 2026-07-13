@@ -387,9 +387,13 @@ create_directories() {
     # Agent directory
     chown -R "${AGENT_USER}:${AGENT_USER}" "${AGENT_DIR}"
 
-    # Release directory: root owns, gateway user reads
-    chown -R root:"${SERVICE_USER}" "${RELEASES_DIR}"
+    # Release directory: agent writes new releases, gateway reads/executes them
+    chown -R "${AGENT_USER}:${SERVICE_USER}" "${RELEASES_DIR}"
     chmod -R 750 "${RELEASES_DIR}"
+
+    # Base directory: writable by agent (to switch symlinks), readable by gateway
+    chown "${AGENT_USER}:${SERVICE_USER}" "${INSTALL_BASE}"
+    chmod 775 "${INSTALL_BASE}"
 
     # Logs writable by gateway user
     chown -R "${SERVICE_USER}:${SERVICE_USER}" "${LOG_DIR}"

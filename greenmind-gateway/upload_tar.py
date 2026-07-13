@@ -11,11 +11,11 @@ headers = {"Authorization": f"Bearer {TOKEN}"}
 
 # 1. Upload
 print("Uploading...")
-with open("/tmp/greenmind-gateway-1.0.5.tar.gz", "rb") as f:
+with open("/tmp/greenmind-gateway-1.0.7.tar.gz", "rb") as f:
     res = requests.post(
         f"{BASE_URL}/gateway-app-releases",
         headers=headers,
-        data={"version": "1.0.5", "channel": "stable", "mandatory": "true"},
+        data={"version": "1.0.7", "channel": "stable", "mandatory": "true"},
         files={"file": f}
     )
 
@@ -35,7 +35,7 @@ if res.status_code != 200:
 # 3. Rollout
 print("Starting rollout...")
 data = {
-    "release_version": "1.0.5",
+    "release_version": "1.0.7",
     "target_ring": "all"
 }
 res = requests.post(f"{BASE_URL}/gateway-rollout", json=data, headers=headers)

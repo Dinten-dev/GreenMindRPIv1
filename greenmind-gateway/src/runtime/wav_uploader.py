@@ -94,7 +94,7 @@ async def upload_loop(credentials: dict) -> None:
 
     while True:
         try:
-            completed = _find_completed_wavs(settings.wav_dir)
+            completed = await asyncio.to_thread(_find_completed_wavs, settings.wav_dir)
 
             if not completed:
                 await asyncio.sleep(30)

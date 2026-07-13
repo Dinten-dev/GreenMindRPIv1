@@ -1,0 +1,502 @@
+2026-07-11 17:02:36 [INFO] [GreenMind] GreenMind Gateway Bootloader starting (hw: dev-925be0f13535)
+2026-07-11 17:02:36 [INFO] [GreenMind] State: UNPROVISIONED → entering setup mode.
+2026-07-11 17:02:36 [INFO] [src.network.wifi_manager] Starting Setup Access Point: GreenMind-Gateway-3535
+2026-07-11 17:02:36 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:02:36 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:02:36 [INFO] [src.network.wifi_manager] Creating new AP profile (password: ***REDACTED***
+2026-07-11 17:02:36 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:02:36 [INFO] [src.setup_portal.server] Setup Portal starting on 0.0.0.0:80 (AP suffix: 3535)
+2026-07-11 17:02:52 [INFO] [GreenMind] GreenMind Gateway Bootloader starting (hw: dev-925be0f13535)
+2026-07-11 17:02:52 [INFO] [GreenMind] State: PROVISIONED → starting runtime mode.
+2026-07-11 17:02:52 [INFO] [src.network.wifi_manager] Shutting down Setup AP: GreenMind-Setup-AP
+2026-07-11 17:02:52 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:02:53 [INFO] [src.runtime.gateway_app] Initializing runtime components...
+2026-07-11 17:02:53 [INFO] [src.persistence.database] Initializing local SQLite at ./data.db
+2026-07-11 17:02:53 [INFO] [src.runtime.gateway_app] Starting ESP32 Ingestion server on 0.0.0.0:80
+2026-07-11 17:02:53 [INFO] [src.persistence.database] Initializing local SQLite at ./data.db
+2026-07-11 17:02:53 [INFO] [src.runtime.gateway_app] Background workers started: ['upload_worker', 'heartbeat_worker', 'remote_manager', 'udp_discovery', 'wav_uploader', 'cloud_sync_worker', 'provisioning_worker']
+2026-07-11 17:02:53 [INFO] [src.runtime.upload_worker] Upload worker started → http://188.245.247.156:8000/api/v1/ingest (bulk mode, up to 200/req)
+2026-07-11 17:02:53 [INFO] [src.runtime.heartbeat] Heartbeat worker started (every 60s).
+2026-07-11 17:02:53 [INFO] [src.runtime.remote_manager] Remote manager started (poll every 60s).
+2026-07-11 17:02:53 [INFO] [src.runtime.udp_discovery] Starting UDP Discovery Server on 0.0.0.0:50000
+2026-07-11 17:02:53 [INFO] [src.runtime.wav_uploader] WAV upload worker started → http://188.245.247.156:8000/api/v1/wav/upload
+2026-07-11 17:02:53 [INFO] [src.provisioning.ble_worker] Starting BLE Provisioning Worker...
+2026-07-11 17:02:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:02:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:02:53 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:02:53 [ERROR] [src.ota.cloud_sync] OTA Sync Unauthorized (401). Check API Key.
+2026-07-11 17:03:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:03:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:03:58 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:04:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:04:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:05:04 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:05:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:05:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:06:10 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:06:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:06:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:07:15 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:07:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:07:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:08:21 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:08:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:08:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:09:26 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:09:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:09:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:10:32 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:10:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:10:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:26:40 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:26:56 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:26:56 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:27:46 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:27:56 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:27:56 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:28:52 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:28:56 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:28:56 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:44:57 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:44:57 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:44:58 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:46:05 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:46:05 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:46:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:47:53 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:47:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:50:28 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:51:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:51:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:52:18 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:53:10 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:53:10 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:53:34 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:55:52 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:55:53 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 17:56:23 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 17:58:05 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 17:58:05 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:00:23 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:00:47 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:00:47 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:02:24 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:03:32 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:03:32 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:06:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:06:24 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:06:24 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:07:20 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:07:27 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:07:27 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:09:31 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:09:32 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:09:32 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:10:56 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:10:56 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:11:01 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:13:50 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:13:50 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:14:01 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:17:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:17:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:17:37 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:18:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:18:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:18:43 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:19:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:19:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:34:52 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:35:24 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:35:24 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:35:58 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 18:36:24 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 18:36:24 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 18:52:06 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:07:26 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:07:26 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:08:13 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:12:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:12:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:15:08 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:15:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:15:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:16:14 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:16:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:16:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:17:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:17:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:17:20 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:18:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:18:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:18:26 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:19:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:19:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:19:31 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:20:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:20:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:20:37 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:21:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:21:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:21:43 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:22:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:22:16 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:22:48 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:23:16 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:23:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:23:54 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:24:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:24:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:25:00 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:25:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:25:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:26:06 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:26:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:26:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:27:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:27:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:27:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:28:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:28:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:28:18 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:29:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:29:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:29:23 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:30:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:30:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:30:29 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:31:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:31:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:31:35 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:32:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:32:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:32:40 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:33:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:33:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:33:46 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:34:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:34:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:34:52 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:35:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:35:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:35:58 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:36:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:36:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:37:04 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:37:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:37:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:38:10 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:38:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:38:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:39:15 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:39:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:39:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:40:17 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:40:17 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:40:21 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:41:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:41:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:41:27 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:42:16 [ERROR] [src.ota.cloud_sync] OTA Sync Unauthorized (401). Check API Key.
+2026-07-11 19:42:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:42:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:42:32 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:43:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:43:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:43:38 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:44:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:44:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:44:44 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:45:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:45:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:45:49 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:46:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:46:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:46:55 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:47:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:47:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:48:00 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:48:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:48:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:49:06 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:49:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:49:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:50:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:50:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:50:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:51:17 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:51:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:51:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:52:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:52:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:52:23 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:53:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:53:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:53:29 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:54:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:54:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:54:34 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:55:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:55:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:55:40 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:56:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:56:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:56:45 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:57:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:57:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:57:51 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:58:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:58:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 19:58:56 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 19:59:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 19:59:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:00:02 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:00:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:00:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:01:08 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:01:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:01:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:02:13 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:02:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:02:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:03:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:03:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:03:19 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:04:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:04:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:04:25 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:05:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:05:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:05:30 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:06:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:06:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:06:36 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:07:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:07:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:07:41 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:08:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:08:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:08:47 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:09:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:09:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:09:53 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:10:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:10:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:10:59 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:11:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:11:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:12:04 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:12:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:12:19 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:13:10 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:13:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:13:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:14:15 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:14:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:14:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:15:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:15:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:15:21 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:16:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:16:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:16:27 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:17:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:17:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:17:32 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:18:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:18:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:18:38 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:19:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:19:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:19:44 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:20:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:20:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:20:49 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:21:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:21:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:21:55 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:22:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:22:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:23:00 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:23:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:23:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:24:06 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:24:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:24:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:25:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:25:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:25:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:26:18 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:26:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:26:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:27:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:27:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:27:23 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:28:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:28:20 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:28:29 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:29:20 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:29:21 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:29:34 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:30:40 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:30:40 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:31:00 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:31:40 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:31:40 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:32:05 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:32:40 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:32:40 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:33:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:33:40 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:33:40 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:34:18 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:34:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:34:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:35:24 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:35:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:35:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:36:29 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:36:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:36:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:37:35 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:37:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:37:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:38:40 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:38:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:38:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:39:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:39:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:39:46 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:40:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:40:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:40:51 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:41:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:41:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:41:57 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:42:37 [ERROR] [src.ota.cloud_sync] OTA Sync Unauthorized (401). Check API Key.
+2026-07-11 20:42:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:42:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:43:03 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:43:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:43:41 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:44:08 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:44:41 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:44:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:45:14 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:45:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:45:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:46:20 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:46:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:46:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:47:25 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:47:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:47:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:48:31 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:48:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:48:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:49:36 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:49:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:49:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:50:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:50:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:50:42 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:51:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:51:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:51:47 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:52:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:52:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:52:53 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:53:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:53:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:53:59 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:54:42 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:54:42 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:55:04 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 20:56:11 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 20:56:11 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 20:56:39 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:12:08 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:12:08 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:12:42 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:13:08 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:13:08 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:13:48 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:14:08 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:14:08 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:29:51 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:30:06 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:30:06 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:30:57 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:31:06 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:31:06 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:32:02 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:32:06 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:32:06 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:48:04 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:48:04 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:48:06 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:49:04 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:49:04 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:49:12 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:50:04 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:50:04 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:50:17 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:53:37 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:53:37 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:54:17 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 21:54:59 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 21:54:59 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 21:55:23 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:07:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:07:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:07:48 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:08:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:08:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:08:53 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:09:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:09:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:09:59 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:10:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:10:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:11:04 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:11:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:11:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:12:10 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:12:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:12:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:13:15 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:13:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:13:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:14:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:14:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:14:21 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:15:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:15:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:15:27 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:16:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:16:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:16:32 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:17:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:17:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:17:38 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:18:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:18:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:18:43 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:19:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:19:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:19:49 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:20:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:20:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:20:55 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:21:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:21:18 [WARNING] [src.runtime.heartbeat] Heartbeat failed (offline?): All connection attempts failed
+2026-07-11 22:22:00 [WARNING] [src.provisioning.ble_worker] WebSocket disconnected or failed: 400, message='Invalid response status', url='ws://green-mind.ch:443/api/v1/provisioning/ws'. Falling back to polling.
+2026-07-11 22:22:17 [INFO] [httpx] HTTP Request: GET http://188.245.247.156:8000/api/v1/gateways/test_id/commands "HTTP/1.1 401 Unauthorized"
+2026-07-11 22:22:18 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:22:19 [INFO] [httpx] HTTP Request: POST http://188.245.247.156:8000/api/v1/gateways/heartbeat "HTTP/1.1 410 Gone"
+2026-07-11 22:22:19 [CRITICAL] [src.runtime.heartbeat] Gateway deleted remotely. Initiating reset sequence.
+2026-07-11 22:22:19 [CRITICAL] [src.runtime.reset] Triggering remote reset. Wiping all local data.
+2026-07-11 22:22:19 [WARNING] [src.core.config_store] All credentials wiped from secrets store.
+2026-07-11 22:22:19 [WARNING] [src.runtime.reset] Could not write reset flag to /boot: [Errno 2] No such file or directory: '/boot/reset_greenmind.txt'
+2026-07-11 22:22:19 [ERROR] [src.network.wifi_manager] OS error running nmcli: [Errno 2] No such file or directory: 'nmcli'
+2026-07-11 22:22:19 [INFO] [src.runtime.reset] Local wipe complete. Exiting service to respawn in Setup Mode.
