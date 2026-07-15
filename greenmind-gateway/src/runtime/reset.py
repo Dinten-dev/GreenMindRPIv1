@@ -24,12 +24,12 @@ async def trigger_remote_reset() -> None:
     except OSError as e:
         logger.warning(f"Could not write reset flag to /boot: {e}")
         
-    # 3. Delete WiFi profiles
-    try:
-        from src.network.wifi_manager import NetworkManager
-        await NetworkManager.delete_all_wifi_profiles()
-    except Exception as e:
-        logger.error(f"Failed to delete WiFi profiles: {e}")
+    # 3. Delete WiFi profiles (Commented out to keep the gateway reachable via LAN/Tailscale during remote reset)
+    # try:
+    #     from src.network.wifi_manager import NetworkManager
+    #     await NetworkManager.delete_all_wifi_profiles()
+    # except Exception as e:
+    #     logger.error(f"Failed to delete WiFi profiles: {e}")
         
     logger.info("Local wipe complete. Exiting service to respawn in Setup Mode.")
     sys.exit(0)

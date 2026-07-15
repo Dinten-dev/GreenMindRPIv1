@@ -9,6 +9,7 @@ Queue.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
@@ -251,8 +252,15 @@ def _build_cloud_request(serial: str, items: list[tuple[IngestJob, dict]]) -> di
                 "timestamp": rt,
             })
 
-    job_ids = sorted(job.id for job, _ in items)
-    measurement_id = str(uuid.uuid5(_MEASUREMENT_NS, ",".join(str(i) for i in job_ids)))
+    # Generate a unique deterministic string representing this batch of jobs
+    parts = []
+    for job, _ in items:
+        ts_str = job.created_at.isoformat() if job.created_at else ""
+        payload_hash = hashlib.sha256(job.payload_json.encode("utf-8")).hexdigest()
+        parts.append(f"{job.id}:{ts_str}:{payload_hash}")
+    
+    parts.sort()
+    measurement_id = str(uuid.uuid5(_MEASUREMENT_NS, ",".join(parts)))
 
     return {
         "measurement_id": measurement_id,

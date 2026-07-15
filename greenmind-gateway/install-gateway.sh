@@ -39,7 +39,7 @@ readonly CONFIG_DIR="${INSTALL_BASE}/config"
 readonly AGENT_DIR="${INSTALL_BASE}/agent"
 readonly RELEASES_DIR="${INSTALL_BASE}/releases"
 readonly BACKUPS_DIR="${INSTALL_BASE}/backups"
-readonly ENV_FILE="${INSTALL_BASE}/current/.env"
+readonly ENV_FILE="${INSTALL_BASE}/.env"
 readonly SERVICE_USER="greenmind"
 readonly AGENT_USER="greenmind-agent"
 readonly GATEWAY_SERVICE="greenmind-gateway"
@@ -411,7 +411,7 @@ create_directories() {
 configure_environment() {
     step "8/11 — Environment Configuration"
 
-    local env_file="${CURRENT_LINK}/.env"
+    local env_file="${INSTALL_BASE}/.env"
 
     if [ -f "${env_file}" ]; then
         info "Existing .env found — preserving current configuration"
@@ -508,7 +508,7 @@ Type=simple
 # Root is required for nmcli AP management without Polkit configuration.
 User=root
 WorkingDirectory=/opt/greenmind/current
-EnvironmentFile=-/opt/greenmind/current/.env
+EnvironmentFile=-/opt/greenmind/.env
 ExecStart=/opt/greenmind/current/venv/bin/python -m src.main
 
 # Restart policy with crash-loop protection
@@ -676,7 +676,7 @@ print_summary() {
     echo -e "${BOLD}Installation Paths${NC}"
     echo "────────────────────────────────────────"
     echo -e "  Active release:  ${CURRENT_LINK}"
-    echo -e "  Configuration:   ${CURRENT_LINK}/.env"
+    echo -e "  Configuration:   ${INSTALL_BASE}/.env"
     echo -e "  Data directory:  ${DATA_DIR}"
     echo -e "  Log directory:   ${LOG_DIR}"
     echo -e "  WAV archive:     ${WAV_DIR}"
