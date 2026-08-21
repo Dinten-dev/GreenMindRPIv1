@@ -18,9 +18,7 @@ class IngestJob(Base):
     status = Column(String(20), default="QUEUED", index=True)
     retry_count = Column(Integer, default=0)
     error_reason = Column(Text, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class DeadLetterJob(Base):
@@ -32,6 +30,4 @@ class DeadLetterJob(Base):
     original_id = Column(Integer, nullable=True)
     payload_json = Column(Text, nullable=False)
     error_reason = Column(Text, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
-    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

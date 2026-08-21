@@ -52,14 +52,13 @@ async def heartbeat_loop(credentials: dict) -> None:
                         if data.get("detail", {}).get("action") == "RESET_TO_SETUP_MODE":
                             logger.critical("Gateway deleted remotely. Initiating reset sequence.")
                             from src.runtime.reset import trigger_remote_reset
+
                             await trigger_remote_reset()
-                    except Exception:
-                        pass
-                    logger.warning("Heartbeat returned 410 Gone, but payload was unrecognized: %s", resp.text)
+                    except (ValueError, TypeError, AttributeError) as exc:
+                        logger.warning("Heartbeat returned malformed 410 response: %s", exc)
+                    logger.warning("Heartbeat returned 410 Gone without a recognized reset action")
                 else:
-                    logger.warning(
-                        "Heartbeat returned %d: %s", resp.status_code, resp.text
-                    )
+                    logger.warning("Heartbeat returned HTTP %d", resp.status_code)
 
             except httpx.HTTPError as exc:
                 logger.warning("Heartbeat failed (offline?): %s", exc)
@@ -85,6 +84,7 @@ def _read_ram_usage() -> float | None:
     """Read RAM usage percentage via psutil (if installed) or /proc/meminfo."""
     try:
         import psutil
+
         return round(psutil.virtual_memory().percent, 1)
     except ImportError:
         pass
@@ -108,25 +108,26 @@ def _read_ram_usage() -> float | None:
 def _get_local_ip() -> str | None:
     """Determine the local IP address by opening a dummy UDP socket."""
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
     except OSError:
         return None
 
 
 def _get_queue_depth() -> int:
     """Count pending jobs in the local SQLite queue."""
+    db = None
     try:
         from src.persistence.database import SessionLocal
 
         if SessionLocal is None:
             return -1
         db = SessionLocal()
-        count = db.query(IngestJob).filter(IngestJob.status == "QUEUED").count()
-        db.close()
-        return count
-    except Exception:
+        return db.query(IngestJob).filter(IngestJob.status == "QUEUED").count()
+    except Exception as exc:
+        logger.warning("Could not read local queue depth: %s", type(exc).__name__)
         return -1
+    finally:
+        if db is not None:
+            db.close()

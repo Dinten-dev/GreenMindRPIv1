@@ -13,8 +13,8 @@ import sqlite3
 import urllib.parse
 from typing import Any
 
-import aiohttp
 import aiofiles
+import aiohttp
 
 from src.config import settings
 
@@ -47,15 +47,24 @@ def save_firmware_metadata(fw: dict[str, Any], local_path: str):
     """Save metadata to local SQLite db."""
     conn = sqlite3.connect(settings.ota_db_path)
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT OR REPLACE INTO firmware 
         (id, version, board_type, hardware_revision, local_path, sha256, mandatory, min_version, changelog)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        fw["id"], fw["version"], fw["board_type"], fw["hardware_revision"], 
-        local_path, fw["sha256"], fw.get("mandatory", False), 
-        fw.get("min_version"), fw.get("changelog")
-    ))
+    """,
+        (
+            fw["id"],
+            fw["version"],
+            fw["board_type"],
+            fw["hardware_revision"],
+            local_path,
+            fw["sha256"],
+            fw.get("mandatory", False),
+            fw.get("min_version"),
+            fw.get("changelog"),
+        ),
+    )
     conn.commit()
     conn.close()
 
@@ -99,14 +108,16 @@ async def download_firmware(session: aiohttp.ClientSession, release: dict[str, A
                     await f.write(chunk)
 
             if hasher.hexdigest() != release["sha256"]:
-                logger.error(f"Downloaded firmware hash mismatch: Expected {release['sha256']}, got {hasher.hexdigest()}")
+                logger.error(
+                    f"Downloaded firmware hash mismatch: Expected {release['sha256']}, got {hasher.hexdigest()}"
+                )
                 os.remove(local_path)
                 return False
 
             save_firmware_metadata(release, local_path)
             logger.info(f"Firmware {release['version']} downloaded and validated successfully.")
             return True
-            
+
     except Exception as e:
         logger.error(f"Exception downloading firmware: {e}")
         return False
@@ -115,7 +126,7 @@ async def download_firmware(session: aiohttp.ClientSession, release: dict[str, A
 async def cloud_sync_worker():
     """Background task syncing firmware metadata and binaries."""
     init_ota_db()
-    
+
     api_key = ""
     try:
         with open(settings.secrets_path, "r") as f:

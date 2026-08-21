@@ -4,13 +4,40 @@ __pycache__/
 *.pyo
 venv/
 .venv/
+.python-version
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # ── Environment / Secrets ─────
 .env
+.env.*
 !.env.example
-data/secrets.json
-data/queue.db
-data/logs/
+**/secrets.json
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+logs/
+data/
+
+# ── Measurements / generated releases ─
+*.wav
+*.wav.part
+*.tar.gz
+*.whl
+wheels/
+dist/
+build/
+test_wav/
+tmp_wav*/
+test_firmware/
+test_logs/
 
 # ── OS / IDE ──────────────────
 .DS_Store
@@ -18,3 +45,11 @@ data/logs/
 .idea/
 *.swp
 *~
+Thumbs.db
+
+# ── Embedded / firmware build output ─
+.pio/
+sdkconfig.old
+*.elf
+*.map
+*.bin

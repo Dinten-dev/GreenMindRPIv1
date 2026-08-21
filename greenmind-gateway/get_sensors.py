@@ -1,7 +1,7 @@
 import os
 import sys
 
-import requests
+import httpx
 
 TOKEN = os.environ.get("GREENMIND_TOKEN", "")
 if not TOKEN:
@@ -10,5 +10,6 @@ BASE_URL = "https://green-mind.ch/api/v1"
 
 headers = {"Authorization": f"Bearer {TOKEN}"}
 
-res = requests.get(f"{BASE_URL}/sensors", headers=headers)
+res = httpx.get(f"{BASE_URL}/sensors", headers=headers, timeout=30.0)
+res.raise_for_status()
 print(res.json())

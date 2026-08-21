@@ -10,7 +10,7 @@ Type=simple
 # Root is required for nmcli AP management without Polkit configuration.
 User=root
 WorkingDirectory=/opt/greenmind/current
-EnvironmentFile=-/opt/greenmind/current/.env
+EnvironmentFile=-/opt/greenmind/.env
 ExecStart=/opt/greenmind/current/venv/bin/python -m src.main
 
 # Restart policy with crash-loop protection
@@ -21,6 +21,21 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=greenmind-gateway
+
+# Moderate sandboxing; /boot remains writable for the documented reset flag.
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/greenmind/data /boot
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target

@@ -6,12 +6,12 @@ Implemented as a FastAPI router to be included in the main Gateway app.
 
 import json
 import logging
-import sqlite3
 import os
-import aiohttp
-
+import sqlite3
 from typing import Any
-from fastapi import APIRouter, HTTPException, Request, Depends
+
+import aiohttp
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from packaging import version as semver
 
@@ -22,12 +22,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ota", tags=["ota"])
 
 
-def get_applicable_firmware(board_type: str, hardware_revision: str, current_version: str) -> dict[str, Any] | None:
+def get_applicable_firmware(
+    board_type: str, hardware_revision: str, current_version: str
+) -> dict[str, Any] | None:
     """Find the best firmware match for the requesting device."""
     conn = sqlite3.connect(settings.ota_db_path)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
+
     query = """
         SELECT * FROM firmware
         WHERE board_type = ? AND hardware_revision = ?
@@ -47,13 +49,13 @@ def get_applicable_firmware(board_type: str, hardware_revision: str, current_ver
 
     for row in rows:
         fw_v = semver.parse(row["version"])
-        
+
         if fw_v > curr_v:
             if row["min_version"]:
                 min_v = semver.parse(row["min_version"])
                 if curr_v < min_v:
                     continue
-            
+
             if best_ver is None or fw_v > best_ver:
                 best_ver = fw_v
                 best_match = dict(row)
@@ -71,14 +73,14 @@ async def check_firmware(board_type: str, hardware_revision: str, current_versio
         best_fw = get_applicable_firmware(board_type, hardware_revision, current_version)
         if not best_fw:
             # 204 No Content means no update available
-            return JSONResponse(status_code=204, content={}) 
-            
+            return JSONResponse(status_code=204, content={})
+
         return {
             "update_available": True,
             "version": best_fw["version"],
             "download_url": f"/api/v1/ota/download/{best_fw['id']}",
             "sha256": best_fw["sha256"],
-            "mandatory": bool(best_fw["mandatory"])
+            "mandatory": bool(best_fw["mandatory"]),
         }
     except Exception as e:
         logger.error(f"Error checking firmware: {e}")
@@ -98,7 +100,7 @@ async def download_firmware(fw_id: str):
     if not row or not os.path.exists(row["local_path"]):
         raise HTTPException(status_code=404, detail="Firmware not found locally")
 
-    return FileResponse(path=row["local_path"], media_type='application/octet-stream')
+    return FileResponse(path=row["local_path"], media_type="application/octet-stream")
 
 
 @router.post("/report")
@@ -106,28 +108,35 @@ async def report_device(request: Request):
     """ESP reports OTA status (success/failure) via gateway."""
     try:
         data = await request.json()
-        
+
         sensor_mac = data.get("mac_address")
         status = data.get("status")
         release_id = data.get("release_id")
-        
+
         # Forward report to the main cloud API
-        api_key = ""
         try:
-            with open(settings.secrets_path, "r") as f:
+            with open(settings.secrets_path, "r", encoding="utf-8") as f:
                 secret_data = json.load(f)
-                api_key = secret_data.get("api_key", "")
-        except Exception:
-            pass
+        except FileNotFoundError:
+            logger.error("Cannot forward OTA report: gateway credentials are not provisioned")
+            raise HTTPException(status_code=503, detail="Gateway credentials unavailable")
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
+            logger.error("Cannot read gateway credentials for OTA report: %s", type(exc).__name__)
+            raise HTTPException(status_code=503, detail="Gateway credentials unavailable")
+
+        api_key = secret_data.get("api_key") if isinstance(secret_data, dict) else None
+        if not isinstance(api_key, str) or not api_key:
+            logger.error("Cannot forward OTA report: gateway API key is missing")
+            raise HTTPException(status_code=503, detail="Gateway credentials unavailable")
 
         headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
         report_url = f"{settings.firmware_api_url}/firmware/report"
-        
+
         payload = {
             "sensor_mac": sensor_mac,
             "release_id": release_id,
             "status": status,
-            "error_message": data.get("error_message")
+            "error_message": data.get("error_message"),
         }
 
         async with aiohttp.ClientSession(headers=headers) as session:
@@ -135,6 +144,8 @@ async def report_device(request: Request):
                 logger.debug(f"Cloud report status: {resp.status}")
 
         return {"status": "reported"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error forwarding device report: {e}")
         raise HTTPException(status_code=500, detail="Internal error")

@@ -30,7 +30,10 @@ async def async_main() -> None:
     setup_logging(log_dir=settings.log_dir, level=settings.log_level)
     logger.info("GreenMind Gateway Bootloader starting (hw: %s)", settings.hardware_id)
 
-    store = SecretStore(filepath=settings.secrets_path)
+    store = SecretStore(
+        filepath=settings.secrets_path,
+        allow_insecure_cloud_http=settings.allow_insecure_cloud_http,
+    )
 
     # 2. Check for hard-reset flag
     if os.path.exists(RESET_FLAG):
@@ -50,11 +53,14 @@ async def async_main() -> None:
 
         credentials = store.get_credentials()
         if not credentials:
-            logger.error("Credentials file corrupt despite is_provisioned() == True. Entering setup.")
+            logger.error(
+                "Credentials file corrupt despite is_provisioned() == True. Entering setup."
+            )
             await _enter_setup_mode(store, settings)
             return
 
         from src.runtime.gateway_app import run_gateway
+
         await run_gateway(credentials)
     else:
         logger.info("State: UNPROVISIONED → entering setup mode.")

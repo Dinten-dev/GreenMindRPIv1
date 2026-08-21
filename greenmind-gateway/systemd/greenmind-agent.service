@@ -10,6 +10,7 @@ Type=simple
 User=greenmind-agent
 Group=greenmind-agent
 WorkingDirectory=/opt/greenmind/agent
+EnvironmentFile=-/opt/greenmind/.env
 ExecStart=/opt/greenmind/agent/venv/bin/python greenmind_agent.py
 
 # Restart policy
@@ -24,9 +25,17 @@ SyslogIdentifier=greenmind-agent
 # Hardening — agent needs write to /opt/greenmind/* and /tmp for downloads
 NoNewPrivileges=false
 ProtectSystem=strict
-ReadWritePaths=/opt/greenmind /tmp
+ReadWritePaths=/opt/greenmind
 ProtectHome=yes
-PrivateTmp=false
+PrivateTmp=true
+UMask=0027
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target

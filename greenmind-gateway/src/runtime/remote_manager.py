@@ -47,9 +47,7 @@ async def remote_manager_loop(credentials: dict) -> None:
                     # Endpoint not yet implemented on the cloud – silent skip
                     pass
                 else:
-                    logger.debug(
-                        "Remote manager poll returned %d.", resp.status_code
-                    )
+                    logger.debug("Remote manager poll returned %d.", resp.status_code)
 
             except httpx.HTTPError as exc:
                 logger.debug("Remote manager poll failed (offline?): %s", exc)
@@ -80,33 +78,33 @@ async def _execute_command(cmd: dict, credentials: dict) -> None:
             ["sudo", "systemctl", "restart", "greenmind-gateway"],
             check=False,
         )
-    
+
     elif action == "provision_sensor":
         target_mac = cmd.get("mac_address", "")
         if not target_mac:
             return
-            
+
         logger.info("Provisioning sensor %s", target_mac)
         wifi_ssid = credentials.get("wifi_ssid")
         wifi_password = credentials.get("wifi_password")
-        
+
         # SoftAP Ninja Hop
         target_ap = f"GreenMind-Sensor-{target_mac.replace(':', '')[-4:]}"
         original_ssid = await NetworkManager.get_current_wifi_ssid()
-        
+
         if original_ssid and await NetworkManager.ninja_hop(target_ap):
             await asyncio.sleep(3)
             # Send WiFi data
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    await client.post("http://192.168.4.1/provision", json={
-                        "wifi_ssid": wifi_ssid,
-                        "wifi_password": wifi_password
-                    })
+                    await client.post(
+                        "http://192.168.4.1/provision",
+                        json={"wifi_ssid": wifi_ssid, "wifi_password": wifi_password},
+                    )
                     logger.info("Provisioning sent to sensor!")
             except Exception as e:
                 logger.error("Failed to provision sensor via HTTP: %s", e)
-            
+
             # Hop back
             await NetworkManager.connect_to_wifi(original_ssid, wifi_password)
 

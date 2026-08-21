@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 UDP_PORT = 50000
 
+
 class UdpDiscoveryProtocol(asyncio.DatagramProtocol):
     def __init__(self, ip: str):
         self.ip = ip
@@ -22,13 +23,14 @@ class UdpDiscoveryProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]):
         try:
-            msg = data.decode('utf-8')
+            msg = data.decode("utf-8")
             if "DISCOVER_GREENMIND_GATEWAY" in msg:
-                reply = f"GATEWAY_IP:{self.ip}".encode('utf-8')
+                reply = f"GATEWAY_IP:{self.ip}".encode("utf-8")
                 self.transport.sendto(reply, addr)
                 logger.debug("Answered discovery from %s", addr)
         except Exception as e:
             logger.debug("Failed discovery rx: %s", e)
+
 
 def get_local_ip() -> str:
     """Tries to determine the primary local IP address to broadcast."""
@@ -41,18 +43,17 @@ def get_local_ip() -> str:
     except Exception:
         return "192.168.0.1"
 
+
 async def udp_discovery_server() -> None:
     """Run a UDP server that replies to ESP32 broadcast discoveries."""
     loop = asyncio.get_running_loop()
     ip = get_local_ip()
-    
+
     logger.info("Starting UDP Discovery Server on %s:%d", "0.0.0.0", UDP_PORT)
     transport, protocol = await loop.create_datagram_endpoint(
-        lambda: UdpDiscoveryProtocol(ip),
-        local_addr=("0.0.0.0", UDP_PORT),
-        allow_broadcast=True
+        lambda: UdpDiscoveryProtocol(ip), local_addr=("0.0.0.0", UDP_PORT), allow_broadcast=True
     )
-    
+
     try:
         while True:
             await asyncio.sleep(3600)

@@ -1,224 +1,328 @@
-"""WAV file writer for high-frequency sensor data archival.
+"""Crash-safe, bounded WAV archival for high-frequency sensor measurements.
 
-Receives raw mV float samples from ingest_api and writes them into
-10-minute WAV file chunks per sensor MAC address. Files are stored
-locally and picked up by wav_uploader for cloud transfer.
-
-Format: 16-bit PCM, mono, 380 Hz sample rate.
-Mapping: 0–3300 mV → 0–32767 int16 (linear scale).
-
-Each WAV file embeds an absolute recording timestamp via a LIST/INFO
-ICRD chunk (ISO 8601 UTC), making files self-describing for offline
-analysis.
+Active chunks use ``.wav.part`` and become uploader-visible ``.wav`` files only
+after the WAV header, metadata, and file contents have been flushed to disk.
+Completed files are never removed here; only an acknowledged cloud upload may
+delete them.
 """
 
-import asyncio
-import logging
-import struct
-import wave
+from __future__ import annotations
+
 import array
+import logging
+import math
+import os
+import re
+import shutil
+import struct
+import subprocess
 import sys
 import time
+import wave
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
 from src.config import settings
+from src.validation import canonical_mac
 
 logger = logging.getLogger(__name__)
 
-assert sys.byteorder == "little", "WAV generation requires little-endian system"
+if sys.byteorder != "little":
+    raise RuntimeError("WAV generation requires a little-endian system")
 
-# mV to int16 conversion: 0-3300 mV maps to 0-32767
 _MV_MAX = 3300.0
 _INT16_MAX = 32767
 _SCALE = _INT16_MAX / _MV_MAX
+_SAFE_WAV_NAME = re.compile(
+    r"^(?P<mac>[0-9A-F]{12})_(?P<timestamp>\d{8}T\d{6})(?:_(?P<sequence>\d{3}))?\.wav$"
+)
 
-# Track active writers per sensor MAC
-_writers: dict[str, "_SensorWriter"] = {}
-_lock = Lock()
-
+_writers: OrderedDict[str, "_SensorWriter"] = OrderedDict()
+_lock = RLock()
 _ntp_cached_status = False
 _ntp_last_checked = 0.0
+_storage_cache: tuple[float, dict[str, int | float | None]] | None = None
+
+
+class WavStorageError(RuntimeError):
+    """Raised when measurement storage cannot safely accept another batch."""
 
 
 def _check_ntp_synced() -> bool:
-    """Check whether the system clock is NTP-synchronized.
-
-    Uses timedatectl on Raspberry Pi OS (systemd-timesyncd).
-    Returns True if synchronized, False otherwise (or on error).
-    """
     try:
-        import subprocess
-
         result = subprocess.run(
             ["timedatectl", "show", "--property=NTPSynchronized", "--value"],
             capture_output=True,
             text=True,
             timeout=2,
+            check=False,
         )
-        return result.stdout.strip().lower() == "yes"
-    except Exception:
+        return result.returncode == 0 and result.stdout.strip().lower() == "yes"
+    except (OSError, subprocess.SubprocessError):
         return False
 
+
 def _get_cached_ntp() -> bool:
-    """Get NTP synced status, cached for 60 seconds."""
     global _ntp_cached_status, _ntp_last_checked
-    now = time.time()
+    now = time.monotonic()
     if now - _ntp_last_checked > 60.0:
         _ntp_cached_status = _check_ntp_synced()
         _ntp_last_checked = now
     return _ntp_cached_status
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Persist a rename on POSIX filesystems that support directory fsync."""
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _embed_icrd(filepath: Path, timestamp_iso: str) -> None:
-    """Append a LIST/INFO chunk with ICRD tag to a closed WAV file.
-
-    The ICRD (Creation Date) tag stores the absolute recording start
-    time as ISO 8601 UTC, e.g. '2026-06-12T08:46:38Z'.
-
-    This modifies the RIFF container in-place by appending the chunk
-    and updating the RIFF size field.
-    """
-    # Build the ICRD sub-chunk
     icrd_data = timestamp_iso.encode("ascii")
-    # Pad to even length (RIFF requirement)
-    if len(icrd_data) % 2 != 0:
+    if len(icrd_data) % 2:
         icrd_data += b"\x00"
-
-    # ICRD sub-chunk: 'ICRD' + size(4 bytes LE) + data
     icrd_chunk = b"ICRD" + struct.pack("<I", len(icrd_data)) + icrd_data
-
-    # LIST/INFO chunk: 'LIST' + size(4 bytes LE) + 'INFO' + sub-chunks
     list_payload = b"INFO" + icrd_chunk
     list_chunk = b"LIST" + struct.pack("<I", len(list_payload)) + list_payload
 
-    with open(filepath, "r+b") as f:
-        # Read current RIFF size (bytes 4-7)
-        f.seek(4)
-        riff_size = struct.unpack("<I", f.read(4))[0]
+    with filepath.open("r+b") as output:
+        output.seek(4)
+        size_bytes = output.read(4)
+        if len(size_bytes) != 4:
+            raise WavStorageError(f"invalid WAV header in {filepath.name}")
+        riff_size = struct.unpack("<I", size_bytes)[0]
+        output.seek(0, os.SEEK_END)
+        output.write(list_chunk)
+        output.seek(4)
+        output.write(struct.pack("<I", riff_size + len(list_chunk)))
+        output.flush()
+        os.fsync(output.fileno())
 
-        # Append LIST chunk at end of file
-        f.seek(0, 2)  # EOF
-        f.write(list_chunk)
 
-        # Update RIFF size
-        new_riff_size = riff_size + len(list_chunk)
-        f.seek(4)
-        f.write(struct.pack("<I", new_riff_size))
+def _scan_storage() -> dict[str, int | float | None]:
+    root = Path(settings.wav_dir)
+    pending_files = 0
+    pending_bytes = 0
+    oldest_mtime: float | None = None
+    if root.exists():
+        for path in root.rglob("*.wav"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            pending_files += 1
+            pending_bytes += stat.st_size
+            oldest_mtime = (
+                stat.st_mtime if oldest_mtime is None else min(oldest_mtime, stat.st_mtime)
+            )
 
-    logger.debug("Embedded ICRD '%s' in %s", timestamp_iso, filepath.name)
+    try:
+        free_bytes = shutil.disk_usage(root if root.exists() else root.parent).free
+    except OSError:
+        free_bytes = -1
+
+    oldest_age_hours = (
+        max(0.0, (time.time() - oldest_mtime) / 3600.0) if oldest_mtime is not None else None
+    )
+    return {
+        "pending_files": pending_files,
+        "pending_bytes": pending_bytes,
+        "free_bytes": free_bytes,
+        "oldest_pending_age_hours": oldest_age_hours,
+    }
+
+
+def storage_status(*, refresh: bool = False) -> dict[str, int | float | None]:
+    """Return bounded-storage telemetry without deleting queued measurements."""
+    global _storage_cache
+    now = time.monotonic()
+    with _lock:
+        if refresh or _storage_cache is None or now - _storage_cache[0] > 30:
+            _storage_cache = (now, _scan_storage())
+        return dict(_storage_cache[1])
+
+
+def _invalidate_storage_cache() -> None:
+    global _storage_cache
+    _storage_cache = None
+
+
+def notify_completed_file_removed() -> None:
+    """Invalidate metrics after the uploader deletes an acknowledged chunk."""
+    with _lock:
+        _invalidate_storage_cache()
+
+
+def _ensure_storage_capacity() -> None:
+    status = storage_status()
+    raw_free_bytes = status["free_bytes"]
+    free_bytes = int(raw_free_bytes) if raw_free_bytes is not None else -1
+    if free_bytes < 0 and settings.wav_min_free_bytes > 0:
+        raise WavStorageError("could not determine free measurement-storage capacity")
+    if free_bytes < settings.wav_min_free_bytes:
+        raise WavStorageError(
+            f"only {free_bytes} bytes free; minimum is {settings.wav_min_free_bytes}"
+        )
+    if int(status["pending_files"] or 0) >= settings.wav_max_pending_files:
+        raise WavStorageError("maximum number of unacknowledged WAV files reached")
+    if int(status["pending_bytes"] or 0) >= settings.wav_max_pending_bytes:
+        raise WavStorageError("maximum unacknowledged WAV storage reached")
+
+    age = status["oldest_pending_age_hours"]
+    if age is not None and float(age) >= settings.wav_warn_pending_age_hours:
+        logger.error(
+            "Oldest unacknowledged WAV is %.1f hours old; files are retained until upload acknowledgement",
+            age,
+        )
+
+
+def _new_chunk_paths(directory: Path, mac_clean: str, now: datetime) -> tuple[Path, Path]:
+    timestamp = now.strftime("%Y%m%dT%H%M%S")
+    for sequence in range(1000):
+        suffix = "" if sequence == 0 else f"_{sequence:03d}"
+        final_path = directory / f"{mac_clean}_{timestamp}{suffix}.wav"
+        part_path = final_path.with_suffix(".wav.part")
+        if not final_path.exists() and not part_path.exists():
+            return part_path, final_path
+    raise WavStorageError("could not allocate a unique WAV filename")
 
 
 class _SensorWriter:
-    """Manages a WAV file for a single sensor, rotating every chunk interval."""
-
     def __init__(self, mac: str, sample_rate: int):
-        self.mac = mac
+        self.mac = canonical_mac(mac)
+        if sample_rate not in settings.allowed_sample_rates:
+            raise ValueError("unsupported WAV sample rate")
         self.sample_rate = sample_rate
-        self.wav_dir = Path(settings.wav_dir) / mac.replace(":", "").upper()
+        self.wav_dir = Path(settings.wav_dir) / self.mac.replace(":", "")
         self.wav_dir.mkdir(parents=True, exist_ok=True)
-        self._lock = Lock()
-
         self._file = None
         self._writer: wave.Wave_write | None = None
         self._started_at: datetime | None = None
-        self._ntp_synced: bool = False
+        self._ntp_synced = False
         self._sample_count = 0
-        self._filepath: Path | None = None
+        self._part_path: Path | None = None
+        self._final_path: Path | None = None
+        self._last_flush = time.monotonic()
 
     def write(self, samples: list[float]) -> str | None:
-        """Write samples to the current WAV chunk.
+        if not samples or len(samples) > settings.max_samples_per_batch:
+            raise ValueError("invalid WAV sample count")
+        if any(not math.isfinite(value) for value in samples):
+            raise ValueError("WAV samples must be finite")
 
-        Returns the filepath of a completed chunk if rotation happened,
-        otherwise None.
-        """
-        with self._lock:
-            completed_path = None
+        _ensure_storage_capacity()
+        completed_path = None
+        if self._writer is None:
+            self._open_new_chunk()
+        else:
+            now = datetime.now(timezone.utc)
+            if self._started_at:
+                interval = settings.wav_chunk_minutes
+                current_bucket = (now.hour * 60 + now.minute) // interval
+                started_bucket = (self._started_at.hour * 60 + self._started_at.minute) // interval
+                if current_bucket != started_bucket or now.date() != self._started_at.date():
+                    completed_path = self._rotate()
 
-            if self._writer is None:
-                self._open_new_chunk()
-            else:
-                now = datetime.now(timezone.utc)
-                if self._started_at:
-                    interval = settings.wav_chunk_minutes
-                    current_bucket = (now.hour * 60 + now.minute) // interval
-                    started_bucket = (self._started_at.hour * 60 + self._started_at.minute) // interval
-                    if current_bucket != started_bucket or now.date() != self._started_at.date():
-                        completed_path = self._rotate()
-
-            # Batch-convert all samples to int16 in one pass
-            frame_data = array.array("h", (int(max(0.0, min(mv, _MV_MAX)) * _SCALE) for mv in samples)).tobytes()
-            self._writer.writeframes(frame_data)
-            self._sample_count += len(samples)
-
-            return completed_path
+        frames = array.array(
+            "h", (int(max(0.0, min(value, _MV_MAX)) * _SCALE) for value in samples)
+        ).tobytes()
+        assert self._writer is not None
+        self._writer.writeframes(frames)
+        self._sample_count += len(samples)
+        self._flush_if_due()
+        return completed_path
 
     def close(self) -> str | None:
-        """Close the current chunk. Returns filepath if there was data."""
-        with self._lock:
-            if self._writer is not None:
-                return self._close_current()
+        if self._writer is None:
             return None
+        return self._close_current()
 
-    def _open_new_chunk(self):
-        """Open a new WAV file for writing."""
+    def _open_new_chunk(self) -> None:
+        _ensure_storage_capacity()
         now = datetime.now(timezone.utc)
         self._started_at = now
         self._ntp_synced = _get_cached_ntp()
-        ts = now.strftime("%Y%m%dT%H%M%S")
-        mac_clean = self.mac.replace(":", "").upper()
-        filename = f"{mac_clean}_{ts}.wav"
-        self._filepath = self.wav_dir / filename
+        self._part_path, self._final_path = _new_chunk_paths(
+            self.wav_dir, self.mac.replace(":", ""), now
+        )
+        try:
+            self._file = self._part_path.open("xb")
+            self._writer = wave.open(self._file, "wb")
+            self._writer.setnchannels(1)
+            self._writer.setsampwidth(2)
+            self._writer.setframerate(self.sample_rate)
+            self._sample_count = 0
+            self._last_flush = time.monotonic()
+        except Exception:
+            if self._file is not None:
+                self._file.close()
+            self._file = None
+            self._writer = None
+            raise
+        logger.info("Opened active WAV chunk: %s (NTP: %s)", self._part_path, self._ntp_synced)
 
-        self._file = open(self._filepath, "wb")
-        self._writer = wave.open(self._file, "wb")
-        self._writer.setnchannels(1)  # Mono
-        self._writer.setsampwidth(2)  # 16-bit
-        self._writer.setframerate(self.sample_rate)
-        self._sample_count = 0
-
-        logger.info("Opened WAV chunk: %s (NTP: %s)", self._filepath, self._ntp_synced)
+    def _flush_if_due(self, *, force: bool = False) -> None:
+        if self._file is None:
+            return
+        now = time.monotonic()
+        if force or now - self._last_flush >= settings.wav_flush_interval_seconds:
+            self._file.flush()
+            os.fsync(self._file.fileno())
+            self._last_flush = now
 
     def _close_current(self) -> str:
-        """Close the current WAV file and embed timestamp metadata. Returns its path."""
-        path = str(self._filepath)
+        assert self._part_path is not None and self._final_path is not None
+        part_path = self._part_path
+        final_path = self._final_path
+        started_at = self._started_at
+
         try:
+            assert self._writer is not None
             self._writer.close()
-        except Exception:
-            pass
-        try:
+            self._writer = None
+            self._flush_if_due(force=True)
+            assert self._file is not None
             self._file.close()
-        except Exception:
-            pass
-        self._writer = None
-        self._file = None
+            self._file = None
+            if started_at:
+                _embed_icrd(part_path, started_at.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            os.replace(part_path, final_path)
+            _fsync_directory(final_path.parent)
+            _invalidate_storage_cache()
+        except Exception as exc:
+            if self._file is not None:
+                try:
+                    self._file.close()
+                except OSError:
+                    pass
+                self._file = None
+            self._writer = None
+            logger.exception("Could not finalize WAV chunk %s", part_path)
+            raise WavStorageError(str(exc)) from exc
 
-        # Embed absolute timestamp as ICRD chunk
-        if self._started_at and self._filepath:
-            try:
-                _embed_icrd(self._filepath, self._started_at.strftime("%Y-%m-%dT%H:%M:%SZ"))
-            except Exception as exc:
-                logger.warning("Failed to embed ICRD in %s: %s", path, exc)
-
-        duration = self._sample_count / self.sample_rate if self.sample_rate > 0 else 0
+        duration = self._sample_count / self.sample_rate
         logger.info(
-            "Closed WAV chunk: %s (%.1fs, %d samples)",
-            path,
+            "Finalized WAV chunk: %s (%.1fs, %d samples)",
+            final_path,
             duration,
             self._sample_count,
         )
-        return path
+        return str(final_path)
 
     def _rotate(self) -> str:
-        """Close current chunk and open a new one. Returns completed filepath."""
         completed = self._close_current()
         self._open_new_chunk()
         return completed
-
-    @property
-    def started_at(self) -> datetime | None:
-        return self._started_at
 
     @property
     def ntp_synced(self) -> bool:
@@ -226,33 +330,96 @@ class _SensorWriter:
 
 
 def write_samples(mac: str, samples: list[float], sample_rate: int = 380) -> str | None:
-    """Write samples for a sensor MAC. Thread-safe.
-
-    Returns filepath of a completed WAV chunk if rotation happened.
-    """
+    """Write one validated batch and evict/finalize the least-recent writer."""
+    canonical = canonical_mac(mac)
     with _lock:
-        if mac not in _writers:
-            _writers[mac] = _SensorWriter(mac, sample_rate)
-        writer = _writers[mac]
-        
-    return writer.write(samples)
+        writer = _writers.get(canonical)
+        if writer is None:
+            if len(_writers) >= settings.wav_max_open_writers:
+                _, oldest = _writers.popitem(last=False)
+                oldest.close()
+            writer = _SensorWriter(canonical, sample_rate)
+            _writers[canonical] = writer
+        elif writer.sample_rate != sample_rate:
+            raise ValueError("sample rate changed for active sensor writer")
+        _writers.move_to_end(canonical)
+        return writer.write(samples)
 
 
 def get_ntp_status(mac: str) -> bool:
-    """Get NTP sync status for a sensor's active writer."""
+    try:
+        canonical = canonical_mac(mac)
+    except ValueError:
+        return False
     with _lock:
-        writer = _writers.get(mac)
+        writer = _writers.get(canonical)
         return writer.ntp_synced if writer else False
 
 
-def close_all() -> list[str]:
-    """Close all active writers. Returns list of completed filepaths."""
+def active_writer_count() -> int:
     with _lock:
-        paths = []
-        for mac, writer in _writers.items():
-            path = writer.close()
+        return len(_writers)
+
+
+def close_all() -> list[str]:
+    """Finalize all active chunks, retaining any failed ``.part`` for recovery."""
+    with _lock:
+        paths: list[str] = []
+        for writer in _writers.values():
+            try:
+                path = writer.close()
+            except WavStorageError:
+                continue
             if path:
                 paths.append(path)
         _writers.clear()
         return paths
 
+
+def recover_part_files() -> int:
+    """Finalize valid inactive chunks left by a prior unclean shutdown.
+
+    Corrupt or ambiguous files are retained for operator inspection; this
+    function never deletes measurement data.
+    """
+    root = Path(settings.wav_dir)
+    if not root.exists():
+        return 0
+    recovered = 0
+    for part_path in root.rglob("*.wav.part"):
+        if part_path.is_symlink() or not part_path.is_file():
+            logger.error("Refusing unsafe WAV recovery candidate: %s", part_path)
+            continue
+        final_path = Path(str(part_path)[: -len(".part")])
+        match = _SAFE_WAV_NAME.fullmatch(final_path.name)
+        if not match or final_path.exists() or part_path.parent.name != match.group("mac"):
+            logger.error("Retaining unrecognized active WAV candidate: %s", part_path)
+            continue
+        try:
+            with wave.open(str(part_path), "rb") as reader:
+                frame_count = reader.getnframes()
+                if (
+                    reader.getnchannels() != 1
+                    or reader.getsampwidth() != 2
+                    or reader.getframerate() not in settings.allowed_sample_rates
+                    or frame_count < 1
+                ):
+                    raise wave.Error("unexpected WAV parameters")
+                if len(reader.readframes(frame_count)) != frame_count * 2:
+                    raise wave.Error("truncated WAV frames")
+            timestamp = datetime.strptime(match.group("timestamp"), "%Y%m%dT%H%M%S").replace(
+                tzinfo=timezone.utc
+            )
+            with part_path.open("rb") as candidate:
+                candidate.seek(max(0, part_path.stat().st_size - 256))
+                has_icrd = b"ICRD" in candidate.read(256)
+            if not has_icrd:
+                _embed_icrd(part_path, timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            os.replace(part_path, final_path)
+            _fsync_directory(final_path.parent)
+            recovered += 1
+        except (OSError, ValueError, wave.Error, EOFError) as exc:
+            logger.error("Retaining unrecoverable WAV part %s: %s", part_path, exc)
+    if recovered:
+        _invalidate_storage_cache()
+    return recovered

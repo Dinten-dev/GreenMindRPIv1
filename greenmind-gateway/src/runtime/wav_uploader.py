@@ -8,6 +8,8 @@ the local copy on success.
 import asyncio
 import logging
 import os
+import re
+import wave
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,8 +19,7 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Files currently being written by wav_writer (don't upload these)
-_ACTIVE_SUFFIX = ".wav"
+_WAV_NAME = re.compile(r"^(?P<mac>[0-9A-F]{12})_(?P<timestamp>\d{8}T\d{6})(?:_\d{3})?\.wav$")
 
 
 def _parse_wav_filename(filepath: Path) -> dict | None:
@@ -27,24 +28,16 @@ def _parse_wav_filename(filepath: Path) -> dict | None:
     Expected format: {MAC}_{YYYYMMDDTHHmmss}.wav
     Example: AABBCCDDEEFF_20260403T120000.wav
     """
-    stem = filepath.stem  # e.g. AABBCCDDEEFF_20260403T120000
-    parts = stem.split("_", 1)
-    if len(parts) != 2:
+    match = _WAV_NAME.fullmatch(filepath.name)
+    if not match or filepath.parent.name != match.group("mac"):
         return None
 
-    mac_clean = parts[0]
-    time_str = parts[1]
-
-    # Reconstruct MAC with colons
-    if len(mac_clean) == 12:
-        mac = ":".join(mac_clean[i : i + 2] for i in range(0, 12, 2))
-    else:
-        mac = mac_clean
+    mac_clean = match.group("mac")
+    time_str = match.group("timestamp")
+    mac = ":".join(mac_clean[i : i + 2] for i in range(0, 12, 2))
 
     try:
-        started_at = datetime.strptime(time_str, "%Y%m%dT%H%M%S").replace(
-            tzinfo=timezone.utc
-        )
+        started_at = datetime.strptime(time_str, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
     except ValueError:
         return None
 
@@ -52,36 +45,38 @@ def _parse_wav_filename(filepath: Path) -> dict | None:
 
 
 def _find_completed_wavs(wav_dir: str) -> list[Path]:
-    """Find WAV files that are completed (not currently being written).
-
-    A file is considered complete if it's not the most recent file
-    for its sensor MAC directory, OR if it's older than 15 minutes.
-    """
-    completed = []
+    """Return finalized chunks; active writers only ever expose ``.part``."""
+    completed: list[Path] = []
     wav_path = Path(wav_dir)
 
     if not wav_path.exists():
         return completed
 
     for sensor_dir in wav_path.iterdir():
-        if not sensor_dir.is_dir():
+        if sensor_dir.is_symlink() or not sensor_dir.is_dir():
             continue
+        for filepath in sensor_dir.glob("*.wav"):
+            if filepath.is_symlink() or not filepath.is_file():
+                continue
+            if _parse_wav_filename(filepath):
+                completed.append(filepath)
 
-        wav_files = sorted(sensor_dir.glob("*.wav"))
-        if len(wav_files) <= 1:
-            # Only one file — might be the active one
-            # Check by age: if older than chunk_minutes + buffer, it's done
-            for f in wav_files:
-                age_seconds = (
-                    datetime.now(timezone.utc).timestamp() - f.stat().st_mtime
-                )
-                if age_seconds > (settings.wav_chunk_minutes * 60 + 60):
-                    completed.append(f)
-        else:
-            # All but the last (most recent) are completed
-            completed.extend(wav_files[:-1])
+    return sorted(completed, key=lambda path: path.stat().st_mtime)
 
-    return completed
+
+def _read_wav_metadata(filepath: Path, started_at: datetime) -> tuple[int, datetime]:
+    """Return rate and data-derived end timestamp from a finalized WAV."""
+    with wave.open(str(filepath), "rb") as reader:
+        if reader.getnchannels() != 1 or reader.getsampwidth() != 2:
+            raise wave.Error("unexpected WAV format")
+        sample_rate = reader.getframerate()
+        if sample_rate not in settings.allowed_sample_rates:
+            raise wave.Error("unsupported WAV sample rate")
+        frame_count = reader.getnframes()
+    duration_seconds = frame_count / sample_rate
+    return sample_rate, datetime.fromtimestamp(
+        started_at.timestamp() + duration_seconds, tz=timezone.utc
+    )
 
 
 async def upload_loop(credentials: dict) -> None:
@@ -109,17 +104,18 @@ async def upload_loop(credentials: dict) -> None:
                         logger.warning("Skipping unparseable WAV: %s", filepath)
                         continue
 
-                    # Get end time from file modification time
-                    mtime_ts = filepath.stat().st_mtime
-                    ended_at = datetime.fromtimestamp(mtime_ts, tz=timezone.utc)
-
                     try:
-                        with open(filepath, "rb") as f:
+                        sample_rate, ended_at = await asyncio.to_thread(
+                            _read_wav_metadata, filepath, meta["started_at"]
+                        )
+                        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                        descriptor = os.open(filepath, flags)
+                        with os.fdopen(descriptor, "rb") as f:
                             files = {"file": (filepath.name, f, "audio/wav")}
                             data = {
                                 "sensor_mac": meta["sensor_mac"],
                                 "gateway_serial": gateway_serial,
-                                "sample_rate": "380",
+                                "sample_rate": str(sample_rate),
                                 "started_at": meta["started_at"].isoformat(),
                                 "ended_at": ended_at.isoformat(),
                             }
@@ -132,30 +128,37 @@ async def upload_loop(credentials: dict) -> None:
                             )
 
                         if resp.status_code in (200, 201):
+                            try:
+                                response_data = resp.json()
+                                object_key = response_data.get("s3_key", "?")
+                            except (ValueError, AttributeError):
+                                object_key = "?"
                             logger.info(
                                 "Uploaded WAV: %s → %s",
                                 filepath.name,
-                                resp.json().get("s3_key", "?"),
+                                object_key,
                             )
-                            # Delete local file after successful upload
+                            # Only an explicit successful response acknowledges deletion.
                             filepath.unlink(missing_ok=True)
+                            from src.runtime.wav_writer import notify_completed_file_removed
+
+                            notify_completed_file_removed()
                         elif resp.status_code in (401, 403):
                             logger.error(
-                                "WAV upload auth error for %s: %s",
+                                "WAV upload auth error for %s (HTTP %d)",
                                 filepath.name,
-                                resp.text,
+                                resp.status_code,
                             )
                             await asyncio.sleep(60)
                             break
                         else:
                             logger.warning(
-                                "WAV upload failed for %s: HTTP %d %s",
+                                "WAV upload failed for %s: HTTP %d",
                                 filepath.name,
                                 resp.status_code,
-                                resp.text[:200],
                             )
 
-                    except httpx.HTTPError as exc:
+                    except (httpx.HTTPError, OSError, wave.Error) as exc:
                         logger.warning(
                             "WAV upload network error for %s: %s",
                             filepath.name,

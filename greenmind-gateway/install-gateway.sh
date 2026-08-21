@@ -3,13 +3,13 @@
 # GreenMind Raspberry Pi Gateway — Production Installer
 # ============================================================================
 #
-# One-liner install:
-#   curl -fsSL https://raw.githubusercontent.com/Dinten-dev/GreenMindRPIv1/master/greenmind-gateway/install-gateway.sh | sudo bash
+# Run only from a locally checked-out and reviewed repository:
+#   sudo bash greenmind-gateway/install-gateway.sh <40-hex-commit>
 #
 # Features:
 #   - Idempotent: safe to run multiple times
-#   - Creates dedicated 'greenmind' system user (non-root)
-#   - Clones/updates repo, sets up Python venv, systemd services
+#   - Creates dedicated gateway and unprivileged update-agent identities
+#   - Fetches one reviewed commit, sets up Python venvs and systemd services
 #   - Interactive credential prompting (CLOUD_API_URL + pairing)
 #   - OTA update agent with restricted sudo
 #   - Log rotation via logrotate
@@ -26,9 +26,9 @@ set -euo pipefail
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.0.0"
+readonly SCRIPT_VERSION="1.1.0"
 readonly REPO_URL="https://github.com/Dinten-dev/GreenMindRPIv1.git"
-readonly REPO_BRANCH="master"
+readonly REPO_REVISION="${GREENMIND_REPO_REVISION:-${1:-}}"
 readonly INSTALL_BASE="/opt/greenmind"
 readonly REPO_DIR="${INSTALL_BASE}/repo"
 readonly CURRENT_LINK="${INSTALL_BASE}/current"
@@ -107,6 +107,13 @@ check_root() {
     fi
 }
 
+check_repo_revision() {
+    if [[ ! "${REPO_REVISION}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+        die "A reviewed full Git commit is required: sudo bash install-gateway.sh <40-hex-commit>"
+    fi
+    success "Pinned repository revision: ${REPO_REVISION}"
+}
+
 check_architecture() {
     local arch
     arch="$(uname -m)"
@@ -159,17 +166,12 @@ check_disk_space() {
 # ── Step 1: System Update ────────────────────────────────────────────────────
 
 system_update() {
-    step "1/11 — System Update"
+    step "1/11 — Package Index"
 
     info "Updating package lists..."
     apt-get update -qq
 
-    info "Upgrading installed packages..."
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq \
-        -o Dpkg::Options::="--force-confdef" \
-        -o Dpkg::Options::="--force-confold"
-
-    success "System updated"
+    success "Package index updated (no unattended distribution upgrade performed)"
 }
 
 # ── Step 2: Install Dependencies ─────────────────────────────────────────────
@@ -249,23 +251,36 @@ create_users() {
 # ── Step 4: Clone/Update Repository ─────────────────────────────────────────
 
 clone_repository() {
-    step "4/11 — Cloning Repository"
+    step "4/11 — Fetching Pinned Repository Revision"
 
     mkdir -p "${INSTALL_BASE}"
 
     if [ -d "${REPO_DIR}/.git" ]; then
-        info "Repository exists, pulling latest changes..."
-        git -C "${REPO_DIR}" fetch --quiet origin
-        git -C "${REPO_DIR}" reset --hard "origin/${REPO_BRANCH}" --quiet
-        git -C "${REPO_DIR}" clean -fd --quiet
-        success "Repository updated to latest ${REPO_BRANCH}"
+        local existing_origin
+        existing_origin="$(git -C "${REPO_DIR}" remote get-url origin 2>/dev/null || true)"
+        if [ "${existing_origin}" != "${REPO_URL}" ]; then
+            die "Managed repository has an unexpected origin: ${existing_origin:-missing}"
+        fi
     else
-        info "Cloning ${REPO_URL}..."
-        rm -rf "${REPO_DIR}"
-        git clone --branch "${REPO_BRANCH}" --depth 1 --quiet \
-            "${REPO_URL}" "${REPO_DIR}"
-        success "Repository cloned to ${REPO_DIR}"
+        if [ -e "${REPO_DIR}" ]; then
+            die "Refusing to replace non-Git path: ${REPO_DIR}"
+        fi
+        mkdir -p "${REPO_DIR}"
+        git -C "${REPO_DIR}" init --quiet
+        git -C "${REPO_DIR}" remote add origin "${REPO_URL}"
     fi
+
+    info "Fetching reviewed commit ${REPO_REVISION}..."
+    git -C "${REPO_DIR}" fetch --quiet --no-tags --depth 1 origin "${REPO_REVISION}"
+    git -C "${REPO_DIR}" checkout --quiet --detach --force "${REPO_REVISION}"
+    git -C "${REPO_DIR}" clean -fdx --quiet
+
+    local actual_revision
+    actual_revision="$(git -C "${REPO_DIR}" rev-parse HEAD)"
+    if [ "${actual_revision}" != "${REPO_REVISION,,}" ]; then
+        die "Fetched revision mismatch: expected ${REPO_REVISION}, got ${actual_revision}"
+    fi
+    success "Repository detached at verified commit ${actual_revision}"
 
     # Create the release directory from repo
     local gateway_src="${REPO_DIR}/greenmind-gateway"
@@ -276,10 +291,16 @@ clone_repository() {
     # Set up the current symlink to the gateway source
     # (In OTA mode this points to /opt/greenmind/releases/<version>,
     #  but for initial install we point to the repo clone)
-    local initial_release="${RELEASES_DIR}/initial"
+    local bootstrap_timestamp
+    bootstrap_timestamp="$(date -u +%Y%m%d%H%M%S)"
+    local initial_release="${RELEASES_DIR}/0.0.0+bootstrap.${actual_revision:0:12}.${bootstrap_timestamp}"
     mkdir -p "${initial_release}"
     cp -r "${gateway_src}/src" "${initial_release}/"
     cp "${gateway_src}/requirements.txt" "${initial_release}/"
+    if [ ! -f "${gateway_src}/requirements.lock" ]; then
+        die "Pinned dependency lock is missing: ${gateway_src}/requirements.lock"
+    fi
+    cp "${gateway_src}/requirements.lock" "${initial_release}/"
     [ -f "${gateway_src}/.env.example" ] && cp "${gateway_src}/.env.example" "${initial_release}/.env.example"
 
     # Atomic symlink switch
@@ -295,16 +316,16 @@ setup_venv() {
     local venv_dir="${CURRENT_LINK}/venv"
 
     if [ -d "${venv_dir}" ] && [ -x "${venv_dir}/bin/python" ]; then
-        info "Virtual environment exists, upgrading pip..."
-        "${venv_dir}/bin/pip" install --upgrade pip --quiet
+        info "Virtual environment already exists"
     else
         info "Creating virtual environment..."
         python3 -m venv "${venv_dir}"
-        "${venv_dir}/bin/pip" install --upgrade pip --quiet
     fi
 
-    info "Installing Python dependencies..."
-    "${venv_dir}/bin/pip" install -r "${CURRENT_LINK}/requirements.txt" --quiet
+    info "Installing hash-locked Python dependencies..."
+    "${venv_dir}/bin/python" -m pip install \
+        --disable-pip-version-check --require-hashes \
+        -r "${CURRENT_LINK}/requirements.lock" --quiet
 
     success "Python dependencies installed"
     info "Packages: $(${venv_dir}/bin/pip list --format=columns 2>/dev/null | wc -l) installed"
@@ -320,6 +341,7 @@ setup_agent() {
 
     if [ -f "${gateway_src}/agent/greenmind_agent.py" ]; then
         cp "${gateway_src}/agent/greenmind_agent.py" "${AGENT_DIR}/"
+        cp "${gateway_src}/requirements.lock" "${AGENT_DIR}/requirements.lock"
         info "Agent code installed"
     else
         warn "Agent source not found at ${gateway_src}/agent/ — skipping"
@@ -333,8 +355,9 @@ setup_agent() {
     else
         python3 -m venv "${agent_venv}"
     fi
-    "${agent_venv}/bin/pip" install --upgrade pip --quiet
-    "${agent_venv}/bin/pip" install httpx psutil packaging pydantic --quiet
+    "${agent_venv}/bin/python" -m pip install \
+        --disable-pip-version-check --require-hashes \
+        -r "${AGENT_DIR}/requirements.lock" --quiet
 
     # Sudoers for restricted agent privileges
     info "Configuring sudo whitelist for agent..."
@@ -438,8 +461,8 @@ configure_environment() {
             echo -e "automatically during the pairing process.${NC}"
             echo ""
         else
-            # Non-interactive mode (piped via curl)
-            warn "Non-interactive mode detected (curl pipe)."
+            # Non-interactive automation mode
+            warn "Non-interactive mode detected."
             warn "Using default configuration. Edit ${env_file} after install."
             local api_url="https://green-mind.ch/api/v1"
         fi
@@ -455,6 +478,9 @@ CLOUD_API_URL=${api_url}
 
 # Firmware OTA sync URL (same backend, separate setting for flexibility)
 FIRMWARE_API_URL=${api_url}
+
+# Local development only: permits HTTP solely for localhost/loopback URLs
+ALLOW_INSECURE_CLOUD_HTTP=false
 
 # Local persistence paths
 DB_PATH=${DATA_DIR}/queue.db
@@ -472,10 +498,27 @@ HEARTBEAT_INTERVAL=60
 
 # Queue limits
 MAX_QUEUE_SIZE=100000
+MAX_REQUEST_BODY_BYTES=262144
+MAX_HTTP_CONCURRENCY=128
+HTTP_KEEPALIVE_SECONDS=5
+MAX_SAMPLES_PER_BATCH=760
+ALLOWED_SAMPLE_RATES=[380]
+MAX_SENSOR_IP_ENTRIES=1024
 
 # WAV archival
 WAV_DIR=${WAV_DIR}
 WAV_CHUNK_MINUTES=10
+WAV_MAX_OPEN_WRITERS=64
+WAV_FLUSH_INTERVAL_SECONDS=5
+WAV_MIN_FREE_BYTES=268435456
+WAV_MAX_PENDING_FILES=10000
+WAV_MAX_PENDING_BYTES=21474836480
+WAV_WARN_PENDING_AGE_HOURS=72
+
+# Experimental features / break-glass compatibility (disabled by default)
+ENABLE_BLE_PROVISIONING=false
+ENABLE_EXPERIMENTAL_BIOSIGNAL_PROXY=false
+GREENMIND_ALLOW_LEGACY_ONLINE_PIP=false
 ENV
 
         # Harden .env permissions (readable only by root + gateway user)
@@ -520,6 +563,21 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=greenmind-gateway
 
+# Moderate sandboxing; /boot remains writable for the documented reset flag.
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/greenmind/data /boot
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
 [Install]
 WantedBy=multi-user.target
 SERVICE
@@ -539,6 +597,7 @@ Type=simple
 User=greenmind-agent
 Group=greenmind-agent
 WorkingDirectory=/opt/greenmind/agent
+EnvironmentFile=-/opt/greenmind/.env
 ExecStart=/opt/greenmind/agent/venv/bin/python greenmind_agent.py
 
 # Restart policy
@@ -553,9 +612,17 @@ SyslogIdentifier=greenmind-agent
 # Hardening — agent needs write to /opt/greenmind/* and /tmp for downloads
 NoNewPrivileges=false
 ProtectSystem=strict
-ReadWritePaths=/opt/greenmind /tmp
+ReadWritePaths=/opt/greenmind
 ProtectHome=yes
-PrivateTmp=false
+PrivateTmp=true
+UMask=0027
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
@@ -671,6 +738,7 @@ print_summary() {
     echo -e "  Architecture:    $(uname -m)"
     echo -e "  Python:          $(python3 --version 2>&1)"
     echo -e "  Installer:       v${SCRIPT_VERSION}"
+    echo -e "  Source commit:   ${REPO_REVISION}"
     echo ""
 
     echo -e "${BOLD}Installation Paths${NC}"
@@ -693,9 +761,10 @@ print_summary() {
 
     echo -e "${BOLD}Next Steps${NC}"
     echo "────────────────────────────────────────"
-    echo -e "  1. ${YELLOW}Connect to the gateway WiFi AP: GreenMind-Gateway-XXXX${NC}"
-    echo -e "  2. ${YELLOW}Open http://10.42.0.1 in your browser${NC}"
-    echo -e "  3. ${YELLOW}Enter your WiFi credentials and pairing code${NC}"
+    echo -e "  1. ${YELLOW}Read the per-boot AP password locally:${NC}"
+    echo -e "     ${CYAN}sudo journalctl -u ${GATEWAY_SERVICE} -b | grep 'local setup'${NC}"
+    echo -e "  2. ${YELLOW}Connect to the gateway WiFi AP: GreenMind-Gateway-XXXX${NC}"
+    echo -e "  3. ${YELLOW}Open http://10.42.0.1 and enter WiFi credentials + pairing code${NC}"
     echo -e "  4. ${YELLOW}The gateway will register with the cloud automatically${NC}"
     echo ""
     echo -e "  ${BLUE}Dashboard: https://green-mind.ch${NC}"
@@ -708,6 +777,7 @@ print_summary() {
 main() {
     banner
     check_root
+    check_repo_revision
     check_architecture
     check_os
     check_internet

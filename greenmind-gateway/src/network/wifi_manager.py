@@ -5,6 +5,8 @@ Provides AP management, WiFi client connection, internet check, and RSSI reading
 
 import asyncio
 import logging
+import secrets
+import sys
 
 from src.core.errors import WiFiConnectionError
 
@@ -12,6 +14,59 @@ logger = logging.getLogger(__name__)
 
 AP_CONNECTION_NAME = "GreenMind-Setup-AP"
 WIFI_CONNECT_TIMEOUT = 30  # seconds
+_SETUP_AP_PASSWORD = secrets.token_urlsafe(16)
+_SENSITIVE_ARGUMENTS = {"password", "wifi-sec.psk", "psk", "--password"}
+_credentials_announced = False
+
+
+def get_setup_ap_password() -> str:
+    """Return the process-local, cryptographically random setup credential."""
+    return _SETUP_AP_PASSWORD
+
+
+def _redact_command(args: list[str]) -> str:
+    sanitized: list[str] = []
+    redact_next = False
+    for argument in args:
+        if redact_next:
+            sanitized.append("***REDACTED***")
+            redact_next = False
+            continue
+        lowered = argument.lower()
+        if lowered in _SENSITIVE_ARGUMENTS:
+            sanitized.append(argument)
+            redact_next = True
+        elif any(lowered.startswith(f"{name}=") for name in _SENSITIVE_ARGUMENTS):
+            sanitized.append(f"{argument.split('=', 1)[0]}=***REDACTED***")
+        else:
+            sanitized.append(argument)
+    return " ".join(sanitized)
+
+
+def _sensitive_values(args: list[str]) -> list[str]:
+    values: list[str] = []
+    for index, argument in enumerate(args[:-1]):
+        if argument.lower() in _SENSITIVE_ARGUMENTS:
+            values.append(args[index + 1])
+    return [value for value in values if value]
+
+
+def _redact_output(output: str, args: list[str]) -> str:
+    for value in _sensitive_values(args):
+        output = output.replace(value, "***REDACTED***")
+    return output
+
+
+def _announce_setup_credentials(ssid: str) -> None:
+    """Show credentials on the local service console, never in file logging."""
+    global _credentials_announced
+    if _credentials_announced:
+        return
+    sys.stderr.write(
+        f"GreenMind local setup AP: {ssid}\nGreenMind local setup password: {_SETUP_AP_PASSWORD}\n"
+    )
+    sys.stderr.flush()
+    _credentials_announced = True
 
 
 class NetworkManager:
@@ -27,12 +82,16 @@ class NetworkManager:
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            decoded_stdout = _redact_output(stdout.decode(errors="replace").strip(), args)
+            decoded_stderr = _redact_output(stderr.decode(errors="replace").strip(), args)
             if proc.returncode == 0:
-                return True, stdout.decode().strip()
-            logger.error("Command failed: %s → %s", " ".join(args), stderr.decode().strip())
-            return False, stderr.decode().strip()
+                return True, decoded_stdout
+            logger.error("Command failed: %s → %s", _redact_command(args), decoded_stderr)
+            return False, decoded_stderr
         except asyncio.TimeoutError:
-            logger.error("Command timed out: %s", " ".join(args))
+            proc.kill()
+            await proc.communicate()
+            logger.error("Command timed out: %s", _redact_command(args))
             return False, "timeout"
         except OSError as exc:
             logger.error("OS error running %s: %s", args[0], exc)
@@ -49,27 +108,50 @@ class NetworkManager:
         if ssid is None:
             ssid = f"GreenMind-Gateway-{hw_suffix}"
 
+        _announce_setup_credentials(ssid)
+
         logger.info("Starting Setup Access Point: %s", ssid)
         await NetworkManager._run(["nmcli", "radio", "wifi", "on"])
 
         # Check whether the profile already exists
-        ok, out = await NetworkManager._run(
-            ["nmcli", "-t", "-f", "NAME", "connection", "show"]
-        )
+        ok, out = await NetworkManager._run(["nmcli", "-t", "-f", "NAME", "connection", "show"])
         existing = out.splitlines() if ok else []
 
         if AP_CONNECTION_NAME in existing:
-            logger.info("AP profile exists – bringing it up.")
-            ok, _ = await NetworkManager._run(["nmcli", "connection", "up", AP_CONNECTION_NAME])
-        else:
-            logger.info("Creating new AP profile (password: 12345678).")
+            logger.info("Refreshing existing AP profile with this boot's credentials.")
             ok, _ = await NetworkManager._run(
                 [
-                    "nmcli", "device", "wifi", "hotspot",
-                    "ifname", "wlan0",
-                    "ssid", ssid,
-                    "password", "12345678",
-                    "con-name", AP_CONNECTION_NAME,
+                    "nmcli",
+                    "connection",
+                    "modify",
+                    AP_CONNECTION_NAME,
+                    "802-11-wireless.ssid",
+                    ssid,
+                    "wifi-sec.key-mgmt",
+                    "wpa-psk",
+                    "wifi-sec.psk",
+                    _SETUP_AP_PASSWORD,
+                ]
+            )
+            if not ok:
+                return False
+            ok, _ = await NetworkManager._run(["nmcli", "connection", "up", AP_CONNECTION_NAME])
+        else:
+            logger.info("Creating new AP profile with a per-boot password.")
+            ok, _ = await NetworkManager._run(
+                [
+                    "nmcli",
+                    "device",
+                    "wifi",
+                    "hotspot",
+                    "ifname",
+                    "wlan0",
+                    "ssid",
+                    ssid,
+                    "password",
+                    _SETUP_AP_PASSWORD,
+                    "con-name",
+                    AP_CONNECTION_NAME,
                 ]
             )
         return ok
@@ -103,36 +185,53 @@ class NetworkManager:
 
             # Build the connection manually to bypass 'key-mgmt is missing' bugs
             # prevalent in 'nmcli device wifi connect' auto-detection
-            ok, out = await NetworkManager._run([
-                "nmcli", "connection", "add",
-                "type", "wifi",
-                "con-name", ssid,
-                "ifname", "wlan0",
-                "ssid", ssid
-            ])
-            
+            ok, out = await NetworkManager._run(
+                [
+                    "nmcli",
+                    "connection",
+                    "add",
+                    "type",
+                    "wifi",
+                    "con-name",
+                    ssid,
+                    "ifname",
+                    "wlan0",
+                    "ssid",
+                    ssid,
+                ]
+            )
+
             if password:
-                await NetworkManager._run([
-                    "nmcli", "connection", "modify", ssid,
-                    "wifi-sec.key-mgmt", "wpa-psk",
-                    "wifi-sec.psk", password
-                ])
-                
-            logger.info(f"Connection attempt {attempt + 1}/3 for {ssid}")
-            ok, out = await NetworkManager._run(["nmcli", "connection", "up", ssid], timeout=WIFI_CONNECT_TIMEOUT)
-            
+                await NetworkManager._run(
+                    [
+                        "nmcli",
+                        "connection",
+                        "modify",
+                        ssid,
+                        "wifi-sec.key-mgmt",
+                        "wpa-psk",
+                        "wifi-sec.psk",
+                        password,
+                    ]
+                )
+
+            logger.info("Connection attempt %d/3 for %s", attempt + 1, ssid)
+            ok, out = await NetworkManager._run(
+                ["nmcli", "connection", "up", ssid], timeout=WIFI_CONNECT_TIMEOUT
+            )
+
             if ok:
                 logger.info("Connected to %s", ssid)
                 return True
-                
+
             if "No network with SSID" in out:
-                logger.warning(f"SSID not found on attempt {attempt + 1}, rescanning...")
+                logger.warning("SSID not found on attempt %d, rescanning...", attempt + 1)
                 await NetworkManager._run(["nmcli", "device", "wifi", "rescan"])
                 await asyncio.sleep(3)
             else:
-                logger.warning(f"Connection failed on attempt {attempt + 1}: {out}")
+                logger.warning("Connection failed on attempt %d: %s", attempt + 1, out)
                 await asyncio.sleep(2)
-        
+
         # If we exhausted all retries, raise error
         logger.error("WiFi connection failed – reverting to AP mode.")
         await NetworkManager.start_ap()
@@ -141,9 +240,7 @@ class NetworkManager:
     @staticmethod
     async def check_internet() -> bool:
         """Ping 8.8.8.8 to verify outbound connectivity."""
-        ok, _ = await NetworkManager._run(
-            ["ping", "-c", "1", "-W", "3", "8.8.8.8"], timeout=10
-        )
+        ok, _ = await NetworkManager._run(["ping", "-c", "1", "-W", "3", "8.8.8.8"], timeout=10)
         return ok
 
     @staticmethod
@@ -182,7 +279,9 @@ class NetworkManager:
     @staticmethod
     async def get_current_wifi_ssid() -> str | None:
         """Get the SSID of the currently active WiFi connection."""
-        ok, out = await NetworkManager._run(["nmcli", "-t", "-f", "NAME,TYPE,STATE", "connection", "show"])
+        ok, out = await NetworkManager._run(
+            ["nmcli", "-t", "-f", "NAME,TYPE,STATE", "connection", "show"]
+        )
         if not ok:
             return None
         for line in out.splitlines():
@@ -190,6 +289,7 @@ class NetworkManager:
             if len(parts) >= 3 and parts[1] == "802-11-wireless" and parts[2] == "activated":
                 return parts[0]
         return None
+
 
 def quality_to_dbm(quality: int) -> int:
     """Convert nmcli signal quality (0-100) to approximate dBm."""

@@ -8,16 +8,18 @@ registers with the cloud and stores its API key locally.
 import asyncio
 import logging
 import os
+import re
 import signal
 
 import httpx
 import uvicorn
-from fastapi import BackgroundTasks, FastAPI, Form, Request
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.config import settings
 from src.core.config_store import SecretStore
-from src.core.errors import CloudAuthError, WiFiConnectionError
+from src.core.errors import WiFiConnectionError
+from src.http_limits import RequestBodyLimitMiddleware
 from src.network.wifi_manager import NetworkManager
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,10 @@ logger = logging.getLogger(__name__)
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
 app = FastAPI(title="GreenMind Gateway Setup", docs_url=None, redoc_url=None)
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_body_bytes=settings.max_request_body_bytes,
+)
 
 
 def _load_template() -> str:
@@ -63,8 +69,29 @@ async def do_setup(
     server_url: str = Form(""),
 ):
     """Process the setup form submission."""
-    if not server_url:
-        server_url = settings.cloud_api_url
+    ssid = ssid.strip()
+    if not ssid or len(ssid.encode("utf-8")) > 32 or any(ord(char) < 32 for char in ssid):
+        raise HTTPException(status_code=422, detail="Invalid WiFi SSID")
+    password_bytes = password.encode("utf-8")
+    valid_password = (
+        not password
+        or 8 <= len(password_bytes) <= 63
+        or (len(password) == 64 and re.fullmatch(r"[0-9A-Fa-f]{64}", password))
+    )
+    if not valid_password:
+        raise HTTPException(status_code=422, detail="Invalid WiFi password length")
+    pairing_code = pairing_code.strip()
+    if not re.fullmatch(r"[A-Za-z0-9-]{4,64}", pairing_code):
+        raise HTTPException(status_code=422, detail="Invalid pairing code")
+    gateway_name = gateway_name.strip()
+    if len(gateway_name) > 64 or any(ord(char) < 32 for char in gateway_name):
+        raise HTTPException(status_code=422, detail="Invalid gateway name")
+
+    # The hidden form value is not trusted. Registration may only target the
+    # operator-configured HTTPS endpoint, preventing setup-portal SSRF/phishing.
+    if server_url and server_url.rstrip("/") != settings.cloud_api_url.rstrip("/"):
+        raise HTTPException(status_code=422, detail="Invalid server URL")
+    server_url = settings.cloud_api_url
 
     store: SecretStore = app.state.store
 
@@ -108,8 +135,7 @@ async def _run_provisioning(store, ssid, password, pairing_code, gateway_name, s
                 },
             )
             if resp.status_code != 201:
-                detail = resp.text
-                logger.error("[E-202] Pairing rejected: %s", detail)
+                logger.error("[E-202] Pairing rejected with HTTP %d", resp.status_code)
                 await NetworkManager.start_ap(hw_suffix=settings.hardware_id[-4:])
                 return
 
@@ -148,12 +174,17 @@ async def run_setup_server(store: SecretStore, port: int = 80) -> bool:
     app.state.store = store
 
     hw_suffix = settings.hardware_id[-4:] if len(settings.hardware_id) >= 4 else "0000"
-    logger.info(
-        "Setup Portal starting on 0.0.0.0:%d (AP suffix: %s)", port, hw_suffix
-    )
+    logger.info("Setup Portal starting on 0.0.0.0:%d (AP suffix: %s)", port, hw_suffix)
 
     try:
-        config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=port,
+            log_level="info",
+            limit_concurrency=settings.max_http_concurrency,
+            timeout_keep_alive=settings.http_keepalive_seconds,
+        )
         server = uvicorn.Server(config)
         await server.serve()
     except (KeyboardInterrupt, asyncio.CancelledError):

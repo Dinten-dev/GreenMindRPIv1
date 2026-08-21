@@ -9,17 +9,20 @@ Security model:
 - Runs as unprivileged greenmind-agent user
 - Only systemctl restart/status and reboot via sudoers
 - SHA256 verification of all artifacts
-- Optional Ed25519 signature verification
+- Mandatory Ed25519 signature verification (fail closed)
 - Download to /tmp, verify, then move to final path
 - Global flock prevents concurrent updates
 - No shell execution, no arbitrary commands
 """
 
+import base64
 import fcntl
 import hashlib
+import ipaddress
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -27,7 +30,8 @@ import tarfile
 import tempfile
 import time
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -54,6 +58,29 @@ MAX_BACKOFF = 300  # 5 minutes
 HEALTHCHECK_TIMEOUT = 15  # seconds after restart
 KEEP_RELEASES = 3
 MIN_DISK_MARGIN_MB = 100
+MAX_RELEASE_ARCHIVE_BYTES = 512 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 10_000
+MAX_ARCHIVE_FILE_BYTES = 512 * 1024 * 1024
+MAX_ARCHIVE_UNPACKED_BYTES = 1024 * 1024 * 1024
+MAX_ARCHIVE_COMPRESSION_RATIO = 200
+ALLOW_LEGACY_ONLINE_PIP = os.environ.get("GREENMIND_ALLOW_LEGACY_ONLINE_PIP", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+ALLOW_INSECURE_CLOUD_HTTP = os.environ.get("ALLOW_INSECURE_CLOUD_HTTP", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+}
+_SEMVER_RE = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+)
+_CONFIG_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+MAX_CONFIG_BYTES = 1024 * 1024
 
 GATEWAY_SERVICE = "greenmind-gateway"
 
@@ -71,6 +98,38 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("greenmind-agent")
+
+
+def _validate_cloud_url(value: str, *, allow_insecure_loopback: bool = False) -> str:
+    """Validate the standalone agent's cloud base URL without logging it."""
+    if not isinstance(value, str) or not value or any(char.isspace() for char in value):
+        raise ValueError("invalid cloud URL")
+
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as exc:
+        raise ValueError("invalid cloud URL") from exc
+
+    if not parsed.netloc or not hostname:
+        raise ValueError("invalid cloud URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("invalid cloud URL")
+    if parsed.query or parsed.fragment:
+        raise ValueError("invalid cloud URL")
+
+    if parsed.scheme == "https":
+        return value.rstrip("/")
+    if parsed.scheme == "http" and allow_insecure_loopback:
+        if hostname.lower() == "localhost":
+            return value.rstrip("/")
+        try:
+            if ipaddress.ip_address(hostname).is_loopback:
+                return value.rstrip("/")
+        except ValueError:
+            pass
+    raise ValueError("invalid cloud URL")
 
 
 # ── State Persistence ────────────────────────────────────────────────
@@ -149,18 +208,22 @@ def is_in_update_window(
 def verify_signature(sha256_hex: str, signature_b64: str | None) -> str:
     """Verify Ed25519 signature of the SHA256 hash.
 
-    Returns: 'signed', 'unsigned', or 'invalid'.
+    Returns ``signed`` only when every verification prerequisite succeeds.
+    Missing signatures, keys, crypto support, and malformed inputs are invalid.
     """
     if not signature_b64:
-        return "unsigned"
+        logger.error("Release is unsigned")
+        return "invalid"
+
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256_hex):
+        logger.error("Release SHA256 is malformed")
+        return "invalid"
 
     if not SIGNING_KEY_PATH.exists():
-        logger.warning("No signing key found at %s — skipping signature check", SIGNING_KEY_PATH)
-        return "unsigned"
+        logger.error("No release signing key found at %s", SIGNING_KEY_PATH)
+        return "invalid"
 
     try:
-        import base64
-
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
@@ -171,16 +234,43 @@ def verify_signature(sha256_hex: str, signature_b64: str | None) -> str:
             logger.error("Signing key is not Ed25519")
             return "invalid"
 
-        signature_bytes = base64.b64decode(signature_b64)
+        signature_bytes = base64.b64decode(signature_b64, validate=True)
+        if len(signature_bytes) != 64:
+            logger.error("Ed25519 signature has an invalid length")
+            return "invalid"
         public_key.verify(signature_bytes, sha256_hex.encode("utf-8"))
         logger.info("Signature verification passed")
         return "signed"
     except ImportError:
-        logger.warning("cryptography library not installed — skipping signature check")
-        return "unsigned"
+        logger.error("cryptography is unavailable; refusing release update")
+        return "invalid"
     except Exception as exc:
         logger.error("Signature verification FAILED: %s", exc)
         return "invalid"
+
+
+def is_valid_semver(version: str) -> bool:
+    """Accept only canonical SemVer 2.0.0 strings safe as path components."""
+    return isinstance(version, str) and bool(_SEMVER_RE.fullmatch(version))
+
+
+def _contained_path(root: Path, child: str) -> Path:
+    """Resolve a direct child and reject escapes through separators/symlinks."""
+    if not child or child in {".", ".."} or "/" in child or "\\" in child:
+        raise ValueError("unsafe path component")
+    resolved_root = root.resolve()
+    candidate = (resolved_root / child).resolve(strict=False)
+    if candidate.parent != resolved_root:
+        raise ValueError("path escapes configured root")
+    return candidate
+
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 
 # ── Disk Check ───────────────────────────────────────────────────────
@@ -199,7 +289,8 @@ def check_disk_space(required_bytes: int | None) -> bool:
     """Verify sufficient disk space: required * 2 + margin."""
     free_mb = get_disk_free_mb()
     if free_mb < 0:
-        return True  # Can't determine, proceed cautiously
+        logger.error("Cannot determine free disk space; refusing update")
+        return False
 
     required_mb = 0
     if required_bytes:
@@ -280,7 +371,7 @@ def run_healthcheck_suite() -> tuple[bool, str]:
 
     # 4. Disk check
     free_mb = get_disk_free_mb()
-    checks["disk"] = free_mb > 100 if free_mb >= 0 else True
+    checks["disk"] = free_mb > 100 if free_mb >= 0 else False
 
     # 5. Current symlink valid
     checks["symlink"] = CURRENT_LINK.is_symlink() and CURRENT_LINK.resolve().is_dir()
@@ -318,6 +409,19 @@ def download_release(
     tmp_file = tmp_dir / "release.tar.gz"
 
     try:
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+            logger.error("Refusing release with malformed SHA256")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return None
+        if (
+            not artifact_url.startswith("/")
+            or artifact_url.startswith("//")
+            or "://" in artifact_url
+            or any(ord(char) < 32 for char in artifact_url)
+        ):
+            logger.error("Refusing unsafe artifact URL")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            return None
         download_url = f"{base_url}{artifact_url}"
         logger.info("Downloading release from %s", artifact_url)
 
@@ -327,17 +431,32 @@ def download_release(
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return None
 
+            content_length = resp.headers.get("content-length")
+            if content_length:
+                try:
+                    declared_size = int(content_length)
+                except ValueError:
+                    logger.error("Release has invalid Content-Length")
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    return None
+                if declared_size < 0 or declared_size > MAX_RELEASE_ARCHIVE_BYTES:
+                    logger.error("Release exceeds maximum archive size")
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+                    return None
+
             hasher = hashlib.sha256()
+            downloaded = 0
             with open(tmp_file, "wb") as f:
                 for chunk in resp.iter_bytes(chunk_size=65536):
+                    downloaded += len(chunk)
+                    if downloaded > MAX_RELEASE_ARCHIVE_BYTES:
+                        raise ValueError("release exceeds maximum archive size")
                     f.write(chunk)
                     hasher.update(chunk)
 
         actual_sha256 = hasher.hexdigest()
         if actual_sha256 != expected_sha256:
-            logger.error(
-                "SHA256 MISMATCH: expected %s, got %s", expected_sha256, actual_sha256
-            )
+            logger.error("SHA256 MISMATCH: expected %s, got %s", expected_sha256, actual_sha256)
             shutil.rmtree(tmp_dir, ignore_errors=True)
             return None
 
@@ -350,26 +469,118 @@ def download_release(
         return None
 
 
-def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
+def _extract_release_archive(tarball_path: Path, destination: Path) -> None:
+    """Extract only bounded regular files/directories into a fresh directory."""
+    archive_size = tarball_path.stat().st_size
+    if archive_size <= 0 or archive_size > MAX_RELEASE_ARCHIVE_BYTES:
+        raise ValueError("release archive size is invalid")
+
+    members: list[tuple[tarfile.TarInfo, Path]] = []
+    seen: set[Path] = set()
+    total_size = 0
+    destination_root = destination.resolve()
+
+    with tarfile.open(tarball_path, "r:gz") as archive:
+        for count, member in enumerate(archive, start=1):
+            if count > MAX_ARCHIVE_MEMBERS:
+                raise ValueError("release archive contains too many entries")
+            if (
+                not member.name
+                or "\\" in member.name
+                or "\x00" in member.name
+                or member.issym()
+                or member.islnk()
+                or member.isdev()
+                or member.isfifo()
+                or getattr(member, "sparse", None)
+                or not (member.isdir() or member.isreg())
+            ):
+                raise ValueError(f"unsupported archive entry: {member.name!r}")
+
+            relative = PurePosixPath(member.name)
+            if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+                raise ValueError(f"unsafe archive path: {member.name!r}")
+            target = destination.joinpath(*relative.parts)
+            resolved = target.resolve(strict=False)
+            try:
+                resolved.relative_to(destination_root)
+            except ValueError as exc:
+                raise ValueError(f"archive path escapes destination: {member.name!r}") from exc
+            if resolved in seen:
+                raise ValueError(f"duplicate archive path: {member.name!r}")
+            seen.add(resolved)
+
+            if member.size < 0 or member.size > MAX_ARCHIVE_FILE_BYTES:
+                raise ValueError(f"archive entry is too large: {member.name!r}")
+            total_size += member.size
+            if total_size > MAX_ARCHIVE_UNPACKED_BYTES:
+                raise ValueError("release archive expands beyond configured limit")
+            members.append((member, resolved))
+
+        if not members:
+            raise ValueError("release archive is empty")
+        if total_size > archive_size * MAX_ARCHIVE_COMPRESSION_RATIO:
+            raise ValueError("release archive compression ratio is unsafe")
+
+        for member, target in members:
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                target.chmod(0o755)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError(f"cannot read archive entry: {member.name!r}")
+            remaining = member.size
+            with target.open("xb") as output:
+                while remaining:
+                    chunk = source.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError(f"truncated archive entry: {member.name!r}")
+                    output.write(chunk)
+                    remaining -= len(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+            target.chmod(0o755 if member.mode & 0o111 else 0o644)
+
+
+def apply_app_update(
+    tarball_path: Path,
+    version: str,
+    state: dict,
+    expected_sha256: str | None = None,
+    signature_b64: str | None = None,
+) -> bool:
     """Extract, install wheels, symlink switch, restart, and healthcheck.
 
     Returns True on success, False triggers rollback.
     """
-    release_dir = RELEASES_DIR / version
+    release_dir: Path | None = None
+    staging_dir: Path | None = None
+    created_release = False
 
     try:
-        # 1. Extract tarball
-        RELEASES_DIR.mkdir(parents=True, exist_ok=True)
-        if release_dir.exists():
-            shutil.rmtree(release_dir)
+        if not is_valid_semver(version):
+            raise ValueError("release version is not canonical SemVer")
+        if expected_sha256 is None or _sha256_file(tarball_path) != expected_sha256:
+            raise ValueError("release digest verification failed before apply")
+        if verify_signature(expected_sha256, signature_b64) != "signed":
+            raise ValueError("release signature verification failed before apply")
 
-        with tarfile.open(tarball_path, "r:gz") as tar:
-            # Security: prevent path traversal
-            for member in tar.getmembers():
-                if member.name.startswith("/") or ".." in member.name:
-                    logger.error("Tarball contains unsafe path: %s", member.name)
-                    return False
-            tar.extractall(path=str(release_dir))
+        RELEASES_DIR.mkdir(parents=True, exist_ok=True)
+        release_dir = _contained_path(RELEASES_DIR, version)
+        if release_dir.exists():
+            raise FileExistsError(f"release {version} already exists")
+
+        staging_dir = Path(tempfile.mkdtemp(prefix=".release-staging-", dir=RELEASES_DIR))
+        _extract_release_archive(tarball_path, staging_dir)
+        if not (staging_dir / "src" / "main.py").is_file():
+            raise ValueError("release is missing src/main.py")
+        if not (staging_dir / "requirements.lock").is_file():
+            raise ValueError("release is missing requirements.lock")
+        os.replace(staging_dir, release_dir)
+        staging_dir = None
+        created_release = True
 
         logger.info("Extracted release to %s", release_dir)
 
@@ -385,13 +596,14 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
         req_file = release_dir / "requirements.lock"
         wheels_dir = release_dir / "wheels"
 
-        if wheels_dir.exists() and req_file.exists():
+        if wheels_dir.is_dir() and req_file.is_file():
             # Offline install from bundled wheels
             subprocess.run(
                 [
                     str(pip_path),
                     "install",
                     "--no-index",
+                    "--require-hashes",
                     "--find-links",
                     str(wheels_dir),
                     "-r",
@@ -402,15 +614,22 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
                 capture_output=True,
             )
             logger.info("Installed dependencies from bundled wheels")
-        elif req_file.exists():
-            # Fallback: online install (legacy tarballs without wheels)
+        elif req_file.is_file() and ALLOW_LEGACY_ONLINE_PIP:
+            # Explicit break-glass compatibility for old releases only.
             subprocess.run(
-                [str(pip_path), "install", "-r", str(req_file)],
+                [str(pip_path), "install", "--require-hashes", "-r", str(req_file)],
                 check=True,
                 timeout=300,
                 capture_output=True,
             )
-            logger.warning("Installed dependencies from PyPI (no wheels bundled)")
+            logger.warning(
+                "INSECURE LEGACY MODE: installed dependencies from the public package index"
+            )
+        else:
+            raise ValueError(
+                "release must bundle wheels; online pip is disabled "
+                "(set GREENMIND_ALLOW_LEGACY_ONLINE_PIP=true only for emergency migration)"
+            )
 
         # 3. Save current symlink target for rollback
         previous = None
@@ -421,7 +640,7 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
         # 4. Atomic symlink switch
         tmp_link = CURRENT_LINK.parent / f".current_tmp_{os.getpid()}"
         tmp_link.symlink_to(release_dir)
-        tmp_link.rename(CURRENT_LINK)
+        os.replace(tmp_link, CURRENT_LINK)
         logger.info("Symlink switched: current → %s", version)
 
         # 5. Restart gateway service
@@ -450,6 +669,9 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
         logger.error("Healthcheck FAILED after update — initiating rollback")
         if previous:
             _rollback_to(Path(previous), state)
+        current_target = CURRENT_LINK.resolve() if CURRENT_LINK.is_symlink() else None
+        if current_target != release_dir:
+            shutil.rmtree(release_dir, ignore_errors=True)
         return False
 
     except Exception as exc:
@@ -457,8 +679,14 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
         previous = state.get("previous_release")
         if previous:
             _rollback_to(Path(previous), state)
+        if created_release and release_dir is not None:
+            current_target = CURRENT_LINK.resolve() if CURRENT_LINK.is_symlink() else None
+            if current_target != release_dir:
+                shutil.rmtree(release_dir, ignore_errors=True)
         return False
     finally:
+        if staging_dir is not None:
+            shutil.rmtree(staging_dir, ignore_errors=True)
         # Clean up temp download
         tmp_parent = tarball_path.parent
         if tmp_parent.name.startswith("greenmind_release_"):
@@ -468,13 +696,22 @@ def apply_app_update(tarball_path: Path, version: str, state: dict) -> bool:
 def _rollback_to(previous_dir: Path, state: dict) -> bool:
     """Revert the current symlink to a previous release and restart."""
     try:
+        releases_root = RELEASES_DIR.resolve()
+        resolved_previous = previous_dir.resolve(strict=True)
+        if (
+            resolved_previous.parent != releases_root
+            or not is_valid_semver(resolved_previous.name)
+            or not resolved_previous.is_dir()
+        ):
+            logger.error("Rollback target is outside the validated release directory")
+            return False
         if not previous_dir.exists():
             logger.error("Rollback target does not exist: %s", previous_dir)
             return False
 
         tmp_link = CURRENT_LINK.parent / f".current_rollback_{os.getpid()}"
-        tmp_link.symlink_to(previous_dir)
-        tmp_link.rename(CURRENT_LINK)
+        tmp_link.symlink_to(resolved_previous)
+        os.replace(tmp_link, CURRENT_LINK)
 
         subprocess.run(
             ["sudo", "systemctl", "restart", GATEWAY_SERVICE],
@@ -501,18 +738,39 @@ def download_config(
 ) -> dict | None:
     """Download config JSON and verify SHA256."""
     try:
+        if (
+            not isinstance(artifact_url, str)
+            or not artifact_url.startswith("/")
+            or artifact_url.startswith("//")
+            or "://" in artifact_url
+            or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256)
+        ):
+            logger.error("Refusing malformed config metadata")
+            return None
         url = f"{base_url}{artifact_url}"
         resp = client.get(url, headers={"X-Api-Key": api_key})
         if resp.status_code != 200:
             logger.error("Config download failed: HTTP %d", resp.status_code)
             return None
 
+        if len(resp.content) > MAX_CONFIG_BYTES:
+            logger.error("Config response exceeds maximum size")
+            return None
+
         data = resp.json()
         payload = data.get("config_payload", data)
 
         # Verify SHA256
-        serialised = json.dumps(payload, sort_keys=True)
-        actual = hashlib.sha256(serialised.encode()).hexdigest()
+        # The backend signs the canonical JSON representation. Whitespace,
+        # insertion order, and non-finite numbers must not create a second
+        # representation of the same config at the verification boundary.
+        serialised = json.dumps(
+            payload,
+            sort_keys=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        actual = hashlib.sha256(serialised.encode("utf-8")).hexdigest()
         if actual != expected_sha256:
             logger.error("Config SHA256 mismatch: expected %s, got %s", expected_sha256, actual)
             return None
@@ -529,9 +787,13 @@ def apply_config_update(payload: dict, version: str, app_version: str | None) ->
         CONFIG_VERSIONS_DIR.mkdir(parents=True, exist_ok=True)
         BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 
-        # 1. Validate JSON structure (basic — extend with Pydantic if schema available)
-        if not isinstance(payload, dict):
+        # 1. Validate the bounded structure and path component.
+        if not isinstance(payload, dict) or not _CONFIG_VERSION_RE.fullmatch(version):
             logger.error("Config payload is not a dict")
+            return False
+        serialised = json.dumps(payload, indent=2)
+        if len(serialised.encode("utf-8")) > MAX_CONFIG_BYTES:
+            logger.error("Config payload exceeds maximum size")
             return False
 
         # 2. Backup current config
@@ -539,20 +801,27 @@ def apply_config_update(payload: dict, version: str, app_version: str | None) ->
         if active_link.exists():
             backup_path = BACKUPS_DIR / "last_good_config.json"
             try:
-                resolved = active_link.resolve()
+                resolved = active_link.resolve(strict=True)
+                resolved.relative_to(CONFIG_VERSIONS_DIR.resolve())
                 shutil.copy2(str(resolved), str(backup_path))
                 logger.info("Backed up current config to %s", backup_path)
             except Exception as exc:
-                logger.warning("Config backup failed: %s", exc)
+                logger.error("Config backup validation failed: %s", exc)
+                return False
 
         # 3. Write new config version
-        config_file = CONFIG_VERSIONS_DIR / f"{version}.json"
-        config_file.write_text(json.dumps(payload, indent=2))
+        config_file = _contained_path(CONFIG_VERSIONS_DIR, f"{version}.json")
+        temp_config = CONFIG_VERSIONS_DIR / f".config-{os.getpid()}.tmp"
+        with temp_config.open("x", encoding="utf-8") as output:
+            output.write(serialised)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temp_config, config_file)
 
         # 4. Atomic symlink switch
         tmp_link = CONFIG_DIR / f".active_tmp_{os.getpid()}"
         tmp_link.symlink_to(config_file)
-        tmp_link.rename(active_link)
+        os.replace(tmp_link, active_link)
         logger.info("Config switched to version %s", version)
 
         # 5. Restart gateway to reload config
@@ -575,7 +844,7 @@ def apply_config_update(payload: dict, version: str, app_version: str | None) ->
         if backup.exists():
             tmp_link = CONFIG_DIR / f".active_rollback_{os.getpid()}"
             tmp_link.symlink_to(backup)
-            tmp_link.rename(active_link)
+            os.replace(tmp_link, active_link)
             subprocess.run(
                 ["sudo", "systemctl", "restart", GATEWAY_SERVICE],
                 check=True,
@@ -659,7 +928,11 @@ def cleanup_old_releases() -> None:
         current_target = CURRENT_LINK.resolve()
 
     releases = sorted(
-        [d for d in RELEASES_DIR.iterdir() if d.is_dir()],
+        [
+            directory
+            for directory in RELEASES_DIR.iterdir()
+            if not directory.is_symlink() and directory.is_dir() and is_valid_semver(directory.name)
+        ],
         key=lambda d: d.stat().st_mtime,
         reverse=True,
     )
@@ -798,8 +1071,17 @@ def main() -> None:
         logger.error("No credentials found in %s — agent cannot start", SECRETS_PATH)
         sys.exit(1)
 
-    # Determine cloud base URL — strip /api/v1 if already present in secrets
-    base_url = server_url.rstrip("/") if server_url else "https://green-mind.ch"
+    # Determine cloud base URL — strip /api/v1 if already present in secrets.
+    # Validation happens before any request and errors never echo the URL, which
+    # may contain accidentally embedded credentials.
+    try:
+        base_url = _validate_cloud_url(
+            server_url or "https://green-mind.ch",
+            allow_insecure_loopback=ALLOW_INSECURE_CLOUD_HTTP,
+        )
+    except ValueError:
+        logger.error("Configured cloud URL is invalid; HTTPS is required")
+        sys.exit(1)
     for suffix in ("/api/v1", "/api/v1/"):
         if base_url.endswith(suffix.rstrip("/")):
             base_url = base_url[: -len(suffix.rstrip("/"))]
@@ -880,25 +1162,42 @@ def main() -> None:
                         if cmd_type == "controlled_reboot":
                             if not desired.get("reboot_allowed"):
                                 report_command_result(
-                                    client, base_url, api_key, gateway_id,
-                                    str(cmd["id"]), "rejected", "Reboot not allowed",
+                                    client,
+                                    base_url,
+                                    api_key,
+                                    gateway_id,
+                                    str(cmd["id"]),
+                                    "rejected",
+                                    "Reboot not allowed",
                                 )
                                 continue
-                            if not desired.get("allow_reboot_outside_window") and not is_in_update_window(
+                            if not desired.get(
+                                "allow_reboot_outside_window"
+                            ) and not is_in_update_window(
                                 desired.get("update_window_start"),
                                 desired.get("update_window_end"),
                                 desired.get("update_timezone", "UTC"),
                             ):
                                 report_command_result(
-                                    client, base_url, api_key, gateway_id,
-                                    str(cmd["id"]), "rejected", "Reboot outside update window",
+                                    client,
+                                    base_url,
+                                    api_key,
+                                    gateway_id,
+                                    str(cmd["id"]),
+                                    "rejected",
+                                    "Reboot outside update window",
                                 )
                                 continue
 
                         result, message = execute_command(cmd, state)
                         report_command_result(
-                            client, base_url, api_key, gateway_id,
-                            str(cmd["id"]), result, message,
+                            client,
+                            base_url,
+                            api_key,
+                            gateway_id,
+                            str(cmd["id"]),
+                            result,
+                            message,
                         )
                     finally:
                         lock.release()
@@ -935,7 +1234,29 @@ def _handle_app_update(
     file_size = desired.get("app_file_size_bytes")
     mandatory = desired.get("app_mandatory", False)
 
-    gateway_id = state.get("gateway_id", "")
+    if (
+        not is_valid_semver(version)
+        or not isinstance(artifact_url, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+        or not isinstance(signature, str)
+        or not signature
+        or isinstance(file_size, bool)
+        or not isinstance(file_size, int)
+        or file_size < 1
+        or file_size > MAX_RELEASE_ARCHIVE_BYTES
+    ):
+        logger.error("REJECTING malformed or unsigned release metadata")
+        state["signature_status"] = "invalid"
+        state["update_download_status"] = "metadata_invalid"
+        report_state(
+            client,
+            base_url,
+            api_key,
+            state,
+            status="metadata_invalid",
+            last_error="Release metadata/signature is missing or invalid",
+        )
+        return
 
     # Phase 1: Download (allowed outside window if configured)
     can_download = desired.get("allow_download_outside_window", True) or is_in_update_window(
@@ -946,8 +1267,31 @@ def _handle_app_update(
 
     cached_tarball = state.get("cached_tarball")
     cached_version = state.get("cached_version")
+    cached_path: Path | None = None
+    if cached_version == version and isinstance(cached_tarball, str):
+        candidate = Path(cached_tarball)
+        try:
+            resolved = candidate.resolve(strict=True)
+            temp_root = Path(tempfile.gettempdir()).resolve()
+            if (
+                candidate.is_symlink()
+                or not resolved.is_file()
+                or resolved.parent.parent != temp_root
+                or not resolved.parent.name.startswith("greenmind_release_")
+                or resolved.stat().st_size > MAX_RELEASE_ARCHIVE_BYTES
+            ):
+                raise ValueError("unsafe cached release path")
+            if _sha256_file(resolved) != sha256:
+                raise ValueError("cached release digest mismatch")
+            if verify_signature(sha256, signature) != "signed":
+                raise ValueError("cached release signature invalid")
+            cached_path = resolved
+        except (OSError, ValueError):
+            logger.error("Discarding invalid cached release metadata")
+            state.pop("cached_tarball", None)
+            state.pop("cached_version", None)
 
-    if cached_version == version and cached_tarball and Path(cached_tarball).exists():
+    if cached_path is not None:
         logger.info("Using cached download for version %s", version)
     elif can_download:
         # Disk pre-check
@@ -965,13 +1309,17 @@ def _handle_app_update(
         # Verify signature
         sig_status = verify_signature(sha256, signature)
         state["signature_status"] = sig_status
-        if sig_status == "invalid":
+        if sig_status != "signed":
             logger.error("REJECTING update %s — invalid signature", version)
             shutil.rmtree(tarball.parent, ignore_errors=True)
             state["update_download_status"] = "signature_invalid"
             report_state(
-                client, base_url, api_key, state,
-                status="signature_invalid", last_error="Ed25519 signature invalid",
+                client,
+                base_url,
+                api_key,
+                state,
+                status="signature_invalid",
+                last_error="Ed25519 signature invalid",
             )
             return
 
@@ -1008,7 +1356,13 @@ def _handle_app_update(
         report_state(client, base_url, api_key, state, status="apply_started")
 
         tarball_path = Path(state["cached_tarball"])
-        success = apply_app_update(tarball_path, version, state)
+        success = apply_app_update(
+            tarball_path,
+            version,
+            state,
+            expected_sha256=sha256,
+            signature_b64=signature,
+        )
 
         if success:
             state["update_apply_status"] = "applied"
@@ -1021,8 +1375,12 @@ def _handle_app_update(
         else:
             state["update_apply_status"] = "failed"
             report_state(
-                client, base_url, api_key, state,
-                status="apply_failed", last_error="Update failed, rolled back",
+                client,
+                base_url,
+                api_key,
+                state,
+                status="apply_failed",
+                last_error="Update failed, rolled back",
             )
     finally:
         lock.release()
@@ -1059,8 +1417,12 @@ def _handle_config_update(
             logger.info("Config update to %s completed", version)
         else:
             report_state(
-                client, base_url, api_key, state,
-                status="config_failed", last_error="Config update failed",
+                client,
+                base_url,
+                api_key,
+                state,
+                status="config_failed",
+                last_error="Config update failed",
             )
     finally:
         lock.release()

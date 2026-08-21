@@ -3,9 +3,9 @@
 Coalesces many queued jobs into a single /ingest request (the cloud endpoint
 accepts a list of readings, each tagged with its own sensor_mac), which lets a
 single gateway serve 10+ sensors instead of being capped by one HTTP round-trip
-per reading. Uses httpx.AsyncClient with exponential backoff. Permanent failures
-(after 20 retries, 4xx validation, or auth errors) are moved to the Dead Letter
-Queue.
+per reading. Uses httpx.AsyncClient with exponential backoff. Transient network,
+server, and gateway-auth failures remain queued; only malformed local records or
+individually confirmed validation failures enter the Dead Letter Queue.
 """
 
 import asyncio
@@ -25,6 +25,7 @@ from src.persistence.models import DeadLetterJob, IngestJob
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 20
+UNKNOWN_SENSOR_DETAIL = "Every sensor must already be registered to the authenticated gateway"
 # How many queued jobs to coalesce into one cloud request. Each job is usually a
 # single aggregate reading, so this is roughly "readings per HTTP round-trip".
 BATCH_SIZE = 200
@@ -41,7 +42,9 @@ async def upload_loop(credentials: dict) -> None:
     server_url = credentials.get("server_url") or settings.cloud_api_url
     headers = {"X-Api-Key": api_key}
 
-    logger.info("Upload worker started → %s/ingest (bulk mode, up to %d/req)", server_url, BATCH_SIZE)
+    logger.info(
+        "Upload worker started → %s/ingest (bulk mode, up to %d/req)", server_url, BATCH_SIZE
+    )
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
@@ -111,7 +114,7 @@ async def _flush_group(
     try:
         resp = await client.post(f"{server_url}/ingest", json=cloud_payload, headers=headers)
     except httpx.HTTPError as exc:
-        backoff = _bump_retries(db, items, str(exc))
+        backoff = _record_transient_failure(db, items, str(exc))
         logger.warning("Network error on batch of %d (%s) – backoff %ds", len(items), exc, backoff)
         await asyncio.sleep(backoff)
         return False
@@ -123,23 +126,43 @@ async def _flush_group(
         logger.info("Uploaded batch: %d readings from %s.", len(cloud_payload["readings"]), serial)
         return True
 
-    if resp.status_code in (401, 403):
-        # Systemic auth failure – do not DLQ the whole queue; back off and retry.
-        backoff = _bump_retries(db, items, f"Auth error {resp.status_code}")
-        logger.error("[E-202] Cloud rejected batch (auth %d). Backoff %ds.", resp.status_code, backoff)
+    if resp.status_code == 401:
+        # A gateway credential can be repaired after an outage or rotation. Keep
+        # every measurement queued instead of converting an auth outage into
+        # permanent data loss.
+        backoff = _record_transient_failure(db, items, "Gateway authentication failed (401)")
+        logger.error(
+            "[E-202] Cloud rejected batch (auth %d). Backoff %ds.", resp.status_code, backoff
+        )
+        await asyncio.sleep(min(60, backoff))
+        return False
+
+    if resp.status_code == 403:
+        if _response_detail(resp) == UNKNOWN_SENSOR_DETAIL:
+            logger.warning(
+                "Cloud rejected a mixed batch for sensor assignment; isolating %d jobs.",
+                len(items),
+            )
+            return await _isolate_rejected(client, db, server_url, headers, serial, items)
+
+        backoff = _record_transient_failure(db, items, "Gateway authorization failed (403)")
+        logger.error("Cloud rejected gateway authorization (403). Backoff %ds.", backoff)
         await asyncio.sleep(min(60, backoff))
         return False
 
     if resp.status_code == 410:
         try:
             data = resp.json()
-            if data.get("detail", {}).get("action") == "RESET_TO_SETUP_MODE":
+        except ValueError as exc:
+            logger.warning("Cloud returned malformed JSON with HTTP 410: %s", exc)
+        else:
+            detail = data.get("detail") if isinstance(data, dict) else None
+            action = detail.get("action") if isinstance(detail, dict) else None
+            if action == "RESET_TO_SETUP_MODE":
                 logger.critical("Gateway deleted remotely. Initiating reset sequence.")
                 from src.runtime.reset import trigger_remote_reset
 
                 await trigger_remote_reset()
-        except Exception:
-            pass
         logger.error("Batch rejected (410 Gone). Backing off.")
         await asyncio.sleep(5)
         return False
@@ -148,53 +171,70 @@ async def _flush_group(
         # A poison job somewhere in the batch. Isolate by retrying per job so one
         # bad reading can't block the whole queue.
         logger.warning("Batch validation error (422). Isolating %d jobs individually.", len(items))
-        await _isolate_poison(client, db, server_url, headers, serial, items)
-        return True
+        return await _isolate_rejected(client, db, server_url, headers, serial, items)
 
     # Other 5xx – transient. Back off and retry the batch.
-    backoff = _bump_retries(db, items, f"HTTP {resp.status_code}")
+    backoff = _record_transient_failure(db, items, f"HTTP {resp.status_code}")
     logger.warning("Batch HTTP %d – backoff %ds.", resp.status_code, backoff)
     await asyncio.sleep(backoff)
     return False
 
 
-async def _isolate_poison(client, db, server_url, headers, serial, items) -> None:
-    """Retry each job alone; DLQ the ones the cloud rejects as invalid."""
+async def _isolate_rejected(client, db, server_url, headers, serial, items) -> bool:
+    """Retry jobs alone, draining valid jobs without losing recoverable ones."""
+    retained = False
+    max_backoff = 0
     for job, payload in items:
         single = _build_cloud_request(serial, [(job, payload)])
         try:
             resp = await client.post(f"{server_url}/ingest", json=single, headers=headers)
         except httpx.HTTPError as exc:
-            job.retry_count += 1
-            job.error_reason = str(exc)
-            if job.retry_count > MAX_RETRIES:
-                _move_to_dlq(db, job, f"Network failure: {exc}")
-            db.commit()
+            max_backoff = max(
+                max_backoff,
+                _record_transient_failure(db, [(job, payload)], f"Network failure: {exc}"),
+            )
+            retained = True
             continue
 
         if resp.status_code in (200, 201, 202):
             db.delete(job)
             db.commit()
         elif resp.status_code == 422:
-            _move_to_dlq(db, job, f"Validation error: {resp.text[:200]}")
+            _move_to_dlq(db, job, "Cloud validation error (HTTP 422)")
             logger.error("Job %d is a poison pill. Moved to DLQ.", job.id)
         else:
-            job.retry_count += 1
-            job.error_reason = f"HTTP {resp.status_code}"
-            if job.retry_count > MAX_RETRIES:
-                _move_to_dlq(db, job, f"Max retries exceeded ({resp.status_code})")
-            db.commit()
+            reason = f"HTTP {resp.status_code}"
+            if resp.status_code == 403 and _response_detail(resp) == UNKNOWN_SENSOR_DETAIL:
+                reason = "Sensor is not assigned to this gateway (403)"
+            max_backoff = max(
+                max_backoff,
+                _record_transient_failure(db, [(job, payload)], reason),
+            )
+            retained = True
+
+    if retained:
+        await asyncio.sleep(min(60, max_backoff))
+        return False
+    return True
 
 
-def _bump_retries(db, items: list[tuple[IngestJob, dict]], reason: str) -> int:
-    """Increment retry_count for a whole batch, DLQ exhausted jobs, return backoff."""
+def _response_detail(response: httpx.Response) -> str | None:
+    """Return a bounded FastAPI error detail without trusting response shape."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    return detail if isinstance(detail, str) and len(detail) <= 500 else None
+
+
+def _record_transient_failure(db, items: list[tuple[IngestJob, dict]], reason: str) -> int:
+    """Keep transiently failed jobs queued and return capped exponential backoff."""
     max_retry = 0
     for job, _ in items:
-        job.retry_count += 1
-        job.error_reason = reason
+        job.retry_count = min((job.retry_count or 0) + 1, MAX_RETRIES)
+        job.error_reason = reason[:500]
         max_retry = max(max_retry, job.retry_count)
-        if job.retry_count > MAX_RETRIES:
-            _move_to_dlq(db, job, f"Max retries exceeded: {reason}")
     db.commit()
     return min(300, 5 * (2 ** min(max_retry, 6)))
 
@@ -244,13 +284,15 @@ def _build_cloud_request(serial: str, items: list[tuple[IngestJob, dict]]) -> di
                 rt = (ts - timedelta(milliseconds=spacing_ms * (n - 1 - i))).isoformat()
             else:
                 rt = ts_iso
-            readings.append({
-                "sensor_mac": mac,
-                "sensor_kind": r.get("kind", r.get("sensor_kind", "bio_signal")),
-                "value": r.get("value", 0.0),
-                "unit": r.get("unit", "mV"),
-                "timestamp": rt,
-            })
+            readings.append(
+                {
+                    "sensor_mac": mac,
+                    "sensor_kind": r.get("kind", r.get("sensor_kind", "bio_signal")),
+                    "value": r.get("value", 0.0),
+                    "unit": r.get("unit", "mV"),
+                    "timestamp": rt,
+                }
+            )
 
     # Generate a unique deterministic string representing this batch of jobs
     parts = []
@@ -258,7 +300,7 @@ def _build_cloud_request(serial: str, items: list[tuple[IngestJob, dict]]) -> di
         ts_str = job.created_at.isoformat() if job.created_at else ""
         payload_hash = hashlib.sha256(job.payload_json.encode("utf-8")).hexdigest()
         parts.append(f"{job.id}:{ts_str}:{payload_hash}")
-    
+
     parts.sort()
     measurement_id = str(uuid.uuid5(_MEASUREMENT_NS, ",".join(parts)))
 
@@ -288,14 +330,20 @@ def _transform_payload(payload: dict) -> dict:
 
     cloud_readings = []
     for i, reading in enumerate(readings):
-        ts = now if n_readings <= 1 else now - timedelta(milliseconds=spacing_ms * (n_readings - 1 - i))
-        cloud_readings.append({
-            "sensor_mac": mac,
-            "sensor_kind": reading.get("kind", reading.get("sensor_kind", "bio_signal")),
-            "value": reading.get("value", 0.0),
-            "unit": reading.get("unit", "mV"),
-            "timestamp": ts.isoformat(),
-        })
+        ts = (
+            now
+            if n_readings <= 1
+            else now - timedelta(milliseconds=spacing_ms * (n_readings - 1 - i))
+        )
+        cloud_readings.append(
+            {
+                "sensor_mac": mac,
+                "sensor_kind": reading.get("kind", reading.get("sensor_kind", "bio_signal")),
+                "value": reading.get("value", 0.0),
+                "unit": reading.get("unit", "mV"),
+                "timestamp": ts.isoformat(),
+            }
+        )
 
     return {
         "measurement_id": str(uuid.uuid4()),
