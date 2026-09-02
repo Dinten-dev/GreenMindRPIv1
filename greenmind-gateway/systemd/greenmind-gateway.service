@@ -1,9 +1,9 @@
 [Unit]
 Description=GreenMind Raspberry Pi Edge Gateway
-After=network-online.target NetworkManager.service
-Wants=network-online.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+After=network-online.target NetworkManager.service tailscaled.service
+Wants=network-online.target tailscaled.service
+RequiresMountsFor=/opt/greenmind/current /opt/greenmind/data
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -15,7 +15,8 @@ ExecStart=/opt/greenmind/current/venv/bin/python -m src.main
 
 # Restart policy with crash-loop protection
 Restart=always
-RestartSec=5
+RestartSec=10
+TimeoutStopSec=30
 
 # Logging
 StandardOutput=journal

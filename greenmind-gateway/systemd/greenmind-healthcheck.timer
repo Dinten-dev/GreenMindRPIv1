@@ -1,0 +1,12 @@
+[Unit]
+Description=Run GreenMind Gateway Health Check
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+RandomizedDelaySec=15s
+Unit=greenmind-healthcheck.service
+
+[Install]
+WantedBy=timers.target

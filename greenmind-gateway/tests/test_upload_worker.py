@@ -117,3 +117,56 @@ def test_unknown_sensor_isolated_without_losing_recoverable_job(monkeypatch):
     assert retained.retry_count == 1
     assert db.query(DeadLetterJob).count() == 0
     db.close()
+
+
+def test_cloud_payload_forwards_source_continuity_metadata():
+    db = _session()
+    job, payload = _job(db, "AA:BB:CC:DD:EE:01")
+    payload.update({"sequence": 42, "uptime_ms": 123_456, "dropped_samples_total": 7})
+
+    cloud = upload_worker._build_cloud_request("gateway-1", [(job, payload)])
+
+    [reading] = cloud["readings"]
+    assert reading["source_sequence"] == 42
+    assert reading["source_uptime_ms"] == 123_456
+    assert reading["source_dropped_samples_total"] == 7
+    db.close()
+
+
+def test_cloud_payload_reduces_one_second_batch_to_one_sql_row():
+    db = _session()
+    job, payload = _job(db, "AA:BB:CC:DD:EE:01")
+    payload.update(
+        {
+            "readings": [
+                {"kind": "bio_signal", "value": value, "unit": "mV"}
+                for value in (100.0, 200.0, 300.0, 400.0)
+            ],
+            "sample_rate": 4,
+            "protocol_version": 2,
+            "firmware_version": "1.4.0",
+            "calibration_version": "nominal-adc-3v3-v1",
+            "boot_id": 123,
+            "quality_counts": {
+                "valid": 3,
+                "lead_off": 1,
+                "rail_high": 0,
+                "rail_low": 0,
+                "jump": 0,
+                "recovery": 0,
+            },
+        }
+    )
+
+    cloud = upload_worker._build_cloud_request("gateway-1", [(job, payload)])
+
+    [reading] = cloud["readings"]
+    assert cloud["aggregation_window"] == "sensor_batch"
+    assert reading["value"] == 250.0
+    assert reading["sample_count"] == 4
+    assert reading["median"] == 250.0
+    assert reading["rms"] == pytest.approx(273.86127875)
+    assert reading["coverage_ratio"] == 1.0
+    assert reading["quality_valid_count"] == 3
+    assert reading["source_boot_id"] == 123
+    db.close()

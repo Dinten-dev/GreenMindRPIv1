@@ -50,6 +50,33 @@ def test_active_chunk_is_hidden_until_atomic_finalize(isolated_wav_storage):
         assert reader.getnframes() == 10
 
 
+def test_capture_timestamp_controls_wav_filename(isolated_wav_storage):
+    captured_end_ms = int(datetime(2026, 1, 1, 12, 0, 1, tzinfo=timezone.utc).timestamp() * 1000)
+
+    wav_writer.write_samples(
+        "aa-bb-cc-dd-ee-ff",
+        [1000.0] * 380,
+        380,
+        captured_at_epoch_ms=captured_end_ms,
+    )
+    [completed] = wav_writer.close_all()
+
+    assert completed.endswith("AABBCCDDEEFF_20260101T120000.wav")
+    assert os.path.getmtime(completed) == pytest.approx(captured_end_ms / 1000, abs=0.01)
+
+
+def test_idle_writer_is_finalized_for_upload(monkeypatch, isolated_wav_storage):
+    wav_writer.write_samples("aa-bb-cc-dd-ee-ff", [1000.0] * 10, 380)
+    writer = next(iter(wav_writer._writers.values()))
+    monkeypatch.setattr(writer, "_last_write", 0.0)
+
+    [completed] = wav_writer.finalize_idle_writers(1)
+
+    assert completed.endswith(".wav")
+    assert wav_writer.active_writer_count() == 0
+    assert len(list(isolated_wav_storage.rglob("*.wav"))) == 1
+
+
 def test_wav_writer_concurrency():
     macs = [f"00:11:22:33:44:{index:02X}" for index in range(1, 5)]
 

@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import uuid
 from collections import defaultdict
 from datetime import timezone
@@ -26,14 +27,99 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 20
 UNKNOWN_SENSOR_DETAIL = "Every sensor must already be registered to the authenticated gateway"
-# How many queued jobs to coalesce into one cloud request. Each job is usually a
-# single aggregate reading, so this is roughly "readings per HTTP round-trip".
+# How many raw ESP32 batches to coalesce into one cloud request.
 BATCH_SIZE = 200
 
 # Fixed namespace so the measurement_id derived from a set of job ids is stable
 # across retries → the cloud's idempotency check dedupes a re-sent batch instead
 # of double-inserting it.
 _MEASUREMENT_NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00cf4fc964ff")
+
+
+def _percentile(values: list[float], fraction: float) -> float:
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def _aggregate_readings(payload: dict) -> list[dict]:
+    """Reduce each sensor batch to dashboard-compatible per-kind summaries."""
+    preaggregated = payload.get("readings", [])
+    if preaggregated and all("sample_count" in reading for reading in preaggregated):
+        return [
+            {
+                "sensor_kind": reading["kind"],
+                "value": reading["value"],
+                "unit": reading["unit"],
+                "sample_count": reading["sample_count"],
+                "sample_rate_hz": reading["sample_rate_hz"],
+                "median": reading["median"],
+                "rms": reading["rms"],
+                "standard_deviation": reading["standard_deviation"],
+                "minimum": reading["minimum"],
+                "maximum": reading["maximum"],
+                "p05": reading["p05"],
+                "p95": reading["p95"],
+                "coverage_ratio": reading["coverage_ratio"],
+                "protocol_version": payload.get("protocol_version", 1),
+                "firmware_version": payload.get("firmware_version"),
+                "calibration_version": payload.get("calibration_version"),
+                "quality_valid_count": reading.get("quality_valid_count"),
+                "quality_lead_off_count": reading.get("quality_lead_off_count"),
+                "quality_rail_high_count": reading.get("quality_rail_high_count"),
+                "quality_rail_low_count": reading.get("quality_rail_low_count"),
+                "quality_jump_count": reading.get("quality_jump_count"),
+                "quality_recovery_count": reading.get("quality_recovery_count"),
+            }
+            for reading in preaggregated
+        ]
+
+    groups: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for reading in payload.get("readings", []):
+        kind = reading.get("kind", reading.get("sensor_kind", "bio_signal"))
+        unit = reading.get("unit", "mV")
+        groups[(kind, unit)].append(float(reading.get("value", 0.0)))
+
+    sample_rate = int(payload.get("sample_rate", 0) or 0)
+    quality = payload.get("quality_counts") or {}
+    aggregates = []
+    for (kind, unit), values in groups.items():
+        sample_count = len(values)
+        mean = sum(values) / sample_count
+        variance = sum((value - mean) ** 2 for value in values) / sample_count
+        rms = math.sqrt(sum(value * value for value in values) / sample_count)
+        aggregates.append(
+            {
+                "sensor_kind": kind,
+                "value": mean,
+                "unit": unit,
+                "sample_count": sample_count,
+                "sample_rate_hz": float(sample_rate) if sample_rate else None,
+                "median": _percentile(values, 0.5),
+                "rms": rms,
+                "standard_deviation": math.sqrt(variance),
+                "minimum": min(values),
+                "maximum": max(values),
+                "p05": _percentile(values, 0.05),
+                "p95": _percentile(values, 0.95),
+                "coverage_ratio": min(1.0, sample_count / sample_rate) if sample_rate else 1.0,
+                "protocol_version": payload.get("protocol_version", 1),
+                "firmware_version": payload.get("firmware_version"),
+                "calibration_version": payload.get("calibration_version"),
+                "quality_valid_count": quality.get("valid"),
+                "quality_lead_off_count": quality.get("lead_off"),
+                "quality_rail_high_count": quality.get("rail_high"),
+                "quality_rail_low_count": quality.get("rail_low"),
+                "quality_jump_count": quality.get("jump"),
+                "quality_recovery_count": quality.get("recovery"),
+            }
+        )
+    return aggregates
 
 
 async def upload_loop(credentials: dict) -> None:
@@ -257,10 +343,9 @@ def _build_cloud_request(serial: str, items: list[tuple[IngestJob, dict]]) -> di
     Each queued job carries an ESP32 payload:
         {"mac_address": "...", "readings": [{"kind","value","unit"}, ...]}
 
-    The cloud expects one request with a flat readings list, each reading tagged
-    with sensor_mac and an absolute timestamp. We use the job's created_at (when
-    the gateway received the batch) as the timestamp so a drained backlog keeps
-    real capture times instead of being stamped at upload time.
+    The gateway keeps every raw sample in WAV storage. PostgreSQL receives one
+    statistical row per sensor batch and kind, retaining the existing dashboard
+    ``bio_signal`` series without duplicating hundreds of raw samples per second.
     """
     readings: list[dict] = []
     for job, payload in items:
@@ -270,27 +355,19 @@ def _build_cloud_request(serial: str, items: list[tuple[IngestJob, dict]]) -> di
             ts = ts.replace(tzinfo=timezone.utc)
         ts_iso = ts.isoformat() if ts is not None else None
 
-        job_readings = payload.get("readings", [])
-        sample_rate = payload.get("sample_rate", 0) or 0
-        n = len(job_readings)
-        # For multi-sample batches, spread timestamps back from created_at using
-        # the sample rate so intra-batch ordering is preserved.
-        spacing_ms = (1000.0 / sample_rate) if (n > 1 and sample_rate > 0) else 0.0
-
-        for i, r in enumerate(job_readings):
-            if spacing_ms and ts is not None:
-                from datetime import timedelta
-
-                rt = (ts - timedelta(milliseconds=spacing_ms * (n - 1 - i))).isoformat()
-            else:
-                rt = ts_iso
+        source_metadata = {
+            "source_boot_id": payload.get("boot_id"),
+            "source_sequence": payload.get("sequence"),
+            "source_uptime_ms": payload.get("uptime_ms"),
+            "source_dropped_samples_total": payload.get("dropped_samples_total"),
+        }
+        for aggregate in _aggregate_readings(payload):
             readings.append(
                 {
                     "sensor_mac": mac,
-                    "sensor_kind": r.get("kind", r.get("sensor_kind", "bio_signal")),
-                    "value": r.get("value", 0.0),
-                    "unit": r.get("unit", "mV"),
-                    "timestamp": rt,
+                    **aggregate,
+                    "timestamp": ts_iso,
+                    **source_metadata,
                 }
             )
 
@@ -307,6 +384,7 @@ def _build_cloud_request(serial: str, items: list[tuple[IngestJob, dict]]) -> di
     return {
         "measurement_id": measurement_id,
         "gateway_serial": serial,
+        "aggregation_window": "sensor_batch",
         "readings": readings,
     }
 
@@ -317,36 +395,31 @@ def _transform_payload(payload: dict) -> dict:
     Retained for single-payload callers/tests. Prefer _build_cloud_request for
     the drain loop, which batches many jobs into one request.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     mac = payload.get("mac_address", "")
     gateway_serial = payload.get("gateway_serial", "")
-    sample_rate = payload.get("sample_rate", 20)
+    source_metadata = {
+        "source_boot_id": payload.get("boot_id"),
+        "source_sequence": payload.get("sequence"),
+        "source_uptime_ms": payload.get("uptime_ms"),
+        "source_dropped_samples_total": payload.get("dropped_samples_total"),
+    }
 
     now = datetime.now(timezone.utc)
-    readings = payload.get("readings", [])
-    n_readings = len(readings)
-    spacing_ms = 0 if n_readings <= 1 else (1000.0 / sample_rate if sample_rate > 0 else 50)
-
-    cloud_readings = []
-    for i, reading in enumerate(readings):
-        ts = (
-            now
-            if n_readings <= 1
-            else now - timedelta(milliseconds=spacing_ms * (n_readings - 1 - i))
-        )
-        cloud_readings.append(
-            {
-                "sensor_mac": mac,
-                "sensor_kind": reading.get("kind", reading.get("sensor_kind", "bio_signal")),
-                "value": reading.get("value", 0.0),
-                "unit": reading.get("unit", "mV"),
-                "timestamp": ts.isoformat(),
-            }
-        )
+    cloud_readings = [
+        {
+            "sensor_mac": mac,
+            **aggregate,
+            "timestamp": now.isoformat(),
+            **source_metadata,
+        }
+        for aggregate in _aggregate_readings(payload)
+    ]
 
     return {
         "measurement_id": str(uuid.uuid4()),
         "gateway_serial": gateway_serial,
+        "aggregation_window": "sensor_batch",
         "readings": cloud_readings,
     }

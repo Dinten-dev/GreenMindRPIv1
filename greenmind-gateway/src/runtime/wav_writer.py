@@ -213,8 +213,10 @@ class _SensorWriter:
         self._part_path: Path | None = None
         self._final_path: Path | None = None
         self._last_flush = time.monotonic()
+        self._last_write = time.monotonic()
+        self._captured_end: datetime | None = None
 
-    def write(self, samples: list[float]) -> str | None:
+    def write(self, samples: list[float], captured_at: datetime | None = None) -> str | None:
         if not samples or len(samples) > settings.max_samples_per_batch:
             raise ValueError("invalid WAV sample count")
         if any(not math.isfinite(value) for value in samples):
@@ -222,16 +224,20 @@ class _SensorWriter:
 
         _ensure_storage_capacity()
         completed_path = None
+        sample_time = captured_at or datetime.now(timezone.utc)
         if self._writer is None:
-            self._open_new_chunk()
+            self._open_new_chunk(sample_time, captured_at is not None)
         else:
-            now = datetime.now(timezone.utc)
             if self._started_at:
                 interval = settings.wav_chunk_minutes
-                current_bucket = (now.hour * 60 + now.minute) // interval
+                current_bucket = (sample_time.hour * 60 + sample_time.minute) // interval
                 started_bucket = (self._started_at.hour * 60 + self._started_at.minute) // interval
-                if current_bucket != started_bucket or now.date() != self._started_at.date():
+                if (
+                    current_bucket != started_bucket
+                    or sample_time.date() != self._started_at.date()
+                ):
                     completed_path = self._rotate()
+                    self._open_new_chunk(sample_time, captured_at is not None)
 
         frames = array.array(
             "h", (int(max(0.0, min(value, _MV_MAX)) * _SCALE) for value in samples)
@@ -239,6 +245,14 @@ class _SensorWriter:
         assert self._writer is not None
         self._writer.writeframes(frames)
         self._sample_count += len(samples)
+        if captured_at is not None:
+            batch_end = datetime.fromtimestamp(
+                captured_at.timestamp() + len(samples) / self.sample_rate,
+                tz=timezone.utc,
+            )
+            if self._captured_end is None or batch_end > self._captured_end:
+                self._captured_end = batch_end
+        self._last_write = time.monotonic()
         self._flush_if_due()
         return completed_path
 
@@ -247,11 +261,15 @@ class _SensorWriter:
             return None
         return self._close_current()
 
-    def _open_new_chunk(self) -> None:
+    def _open_new_chunk(
+        self,
+        started_at: datetime | None = None,
+        timestamp_synced: bool = False,
+    ) -> None:
         _ensure_storage_capacity()
-        now = datetime.now(timezone.utc)
+        now = started_at or datetime.now(timezone.utc)
         self._started_at = now
-        self._ntp_synced = _get_cached_ntp()
+        self._ntp_synced = timestamp_synced or _get_cached_ntp()
         self._part_path, self._final_path = _new_chunk_paths(
             self.wav_dir, self.mac.replace(":", ""), now
         )
@@ -262,6 +280,7 @@ class _SensorWriter:
             self._writer.setsampwidth(2)
             self._writer.setframerate(self.sample_rate)
             self._sample_count = 0
+            self._captured_end = None
             self._last_flush = time.monotonic()
         except Exception:
             if self._file is not None:
@@ -296,6 +315,9 @@ class _SensorWriter:
             self._file = None
             if started_at:
                 _embed_icrd(part_path, started_at.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            if self._captured_end is not None:
+                captured_timestamp = self._captured_end.timestamp()
+                os.utime(part_path, (captured_timestamp, captured_timestamp))
             os.replace(part_path, final_path)
             _fsync_directory(final_path.parent)
             _invalidate_storage_cache()
@@ -320,16 +342,24 @@ class _SensorWriter:
         return str(final_path)
 
     def _rotate(self) -> str:
-        completed = self._close_current()
-        self._open_new_chunk()
-        return completed
+        return self._close_current()
 
     @property
     def ntp_synced(self) -> bool:
         return self._ntp_synced
 
+    @property
+    def idle_seconds(self) -> float:
+        return max(0.0, time.monotonic() - self._last_write)
 
-def write_samples(mac: str, samples: list[float], sample_rate: int = 380) -> str | None:
+
+def write_samples(
+    mac: str,
+    samples: list[float],
+    sample_rate: int = 380,
+    *,
+    captured_at_epoch_ms: int | None = None,
+) -> str | None:
     """Write one validated batch and evict/finalize the least-recent writer."""
     canonical = canonical_mac(mac)
     with _lock:
@@ -343,7 +373,28 @@ def write_samples(mac: str, samples: list[float], sample_rate: int = 380) -> str
         elif writer.sample_rate != sample_rate:
             raise ValueError("sample rate changed for active sensor writer")
         _writers.move_to_end(canonical)
-        return writer.write(samples)
+        captured_at = None
+        if captured_at_epoch_ms is not None:
+            captured_end = datetime.fromtimestamp(captured_at_epoch_ms / 1000, tz=timezone.utc)
+            captured_at = datetime.fromtimestamp(
+                captured_end.timestamp() - len(samples) / sample_rate,
+                tz=timezone.utc,
+            )
+        return writer.write(samples, captured_at)
+
+
+def finalize_idle_writers(idle_seconds: int) -> list[str]:
+    """Finalize inactive chunks so disconnected sensors remain uploadable."""
+    with _lock:
+        paths: list[str] = []
+        for mac, writer in tuple(_writers.items()):
+            if writer.idle_seconds < idle_seconds:
+                continue
+            path = writer.close()
+            if path:
+                paths.append(path)
+            del _writers[mac]
+        return paths
 
 
 def get_ntp_status(mac: str) -> bool:

@@ -14,6 +14,8 @@ import httpx
 from src.config import settings
 from src.network.wifi_manager import NetworkManager
 from src.persistence.models import IngestJob
+from src.runtime.wav_uploader import upload_status
+from src.runtime.wav_writer import storage_status
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +31,26 @@ async def heartbeat_loop(credentials: dict) -> None:
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             try:
+                wav_storage = await asyncio.to_thread(storage_status)
+                wav_upload = upload_status()
+                queue_depth = _get_queue_depth()
+                if queue_depth is not None and queue_depth >= settings.max_queue_size:
+                    logger.error(
+                        "Local queue warning threshold exceeded: %d records retained",
+                        queue_depth,
+                    )
                 payload = {
                     "hardware_id": hardware_id,
                     "local_ip": _get_local_ip(),
                     "cpu_temp_c": _read_cpu_temp(),
                     "ram_usage_pct": _read_ram_usage(),
                     "wifi_rssi_dbm": await NetworkManager.get_wifi_rssi(),
-                    "queue_depth": _get_queue_depth(),
+                    "queue_depth": queue_depth,
+                    "wav_pending_files": wav_storage["pending_files"],
+                    "wav_pending_bytes": wav_storage["pending_bytes"],
+                    "wav_oldest_pending_age_hours": wav_storage["oldest_pending_age_hours"],
+                    "wav_last_upload_at": wav_upload["last_upload_at"],
+                    "wav_last_error_code": wav_upload["last_error_code"],
                 }
                 headers = {"X-Api-Key": api_key}
 
@@ -115,19 +130,19 @@ def _get_local_ip() -> str | None:
         return None
 
 
-def _get_queue_depth() -> int:
+def _get_queue_depth() -> int | None:
     """Count pending jobs in the local SQLite queue."""
     db = None
     try:
         from src.persistence.database import SessionLocal
 
         if SessionLocal is None:
-            return -1
+            return None
         db = SessionLocal()
         return db.query(IngestJob).filter(IngestJob.status == "QUEUED").count()
     except Exception as exc:
         logger.warning("Could not read local queue depth: %s", type(exc).__name__)
-        return -1
+        return None
     finally:
         if db is not None:
             db.close()

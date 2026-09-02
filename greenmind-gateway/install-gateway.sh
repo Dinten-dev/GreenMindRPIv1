@@ -497,7 +497,7 @@ UPLOAD_INTERVAL=10
 HEARTBEAT_INTERVAL=60
 
 # Queue limits
-MAX_QUEUE_SIZE=100000
+MAX_QUEUE_SIZE=1000000
 MAX_REQUEST_BODY_BYTES=262144
 MAX_HTTP_CONCURRENCY=128
 HTTP_KEEPALIVE_SECONDS=5
@@ -508,11 +508,12 @@ MAX_SENSOR_IP_ENTRIES=1024
 # WAV archival
 WAV_DIR=${WAV_DIR}
 WAV_CHUNK_MINUTES=10
+WAV_IDLE_FINALIZE_SECONDS=120
 WAV_MAX_OPEN_WRITERS=64
 WAV_FLUSH_INTERVAL_SECONDS=5
-WAV_MIN_FREE_BYTES=268435456
-WAV_MAX_PENDING_FILES=10000
-WAV_MAX_PENDING_BYTES=21474836480
+WAV_MIN_FREE_BYTES=8589934592
+WAV_MAX_PENDING_FILES=250000
+WAV_MAX_PENDING_BYTES=103079215104
 WAV_WARN_PENDING_AGE_HOURS=72
 
 # Experimental features / break-glass compatibility (disabled by default)
@@ -541,10 +542,10 @@ install_services() {
     cat > "/etc/systemd/system/${GATEWAY_SERVICE}.service" << 'SERVICE'
 [Unit]
 Description=GreenMind Raspberry Pi Edge Gateway
-After=network-online.target NetworkManager.service
-Wants=network-online.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+After=network-online.target NetworkManager.service tailscaled.service
+Wants=network-online.target tailscaled.service
+RequiresMountsFor=/opt/greenmind/current /opt/greenmind/data
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -554,9 +555,10 @@ WorkingDirectory=/opt/greenmind/current
 EnvironmentFile=-/opt/greenmind/.env
 ExecStart=/opt/greenmind/current/venv/bin/python -m src.main
 
-# Restart policy with crash-loop protection
+# Restart indefinitely after transient boot or runtime failures
 Restart=always
-RestartSec=5
+RestartSec=10
+TimeoutStopSec=30
 
 # Logging
 StandardOutput=journal
@@ -628,12 +630,41 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 WantedBy=multi-user.target
 SERVICE
 
+    # Power-loss recovery, local health supervision, and bounded persistent logs
+    install -D -m 0755 \
+        "${gateway_src}/systemd/greenmind-healthcheck.sh" \
+        "/usr/local/sbin/greenmind-healthcheck"
+    install -D -m 0644 \
+        "${gateway_src}/systemd/greenmind-healthcheck.service" \
+        "/etc/systemd/system/greenmind-healthcheck.service"
+    install -D -m 0644 \
+        "${gateway_src}/systemd/greenmind-healthcheck.timer" \
+        "/etc/systemd/system/greenmind-healthcheck.timer"
+    install -D -m 0644 \
+        "${gateway_src}/systemd/greenmind-gateway-recovery.conf" \
+        "/etc/systemd/system/${GATEWAY_SERVICE}.service.d/recovery.conf"
+    install -D -m 0644 \
+        "${gateway_src}/systemd/greenmind-journald.conf" \
+        "/etc/systemd/journald.conf.d/greenmind.conf"
+    install -d -m 2755 /var/log/journal
+
+    if systemctl list-unit-files tailscaled.service --no-legend 2>/dev/null | grep -q '^tailscaled.service'; then
+        install -D -m 0644 \
+            "${gateway_src}/systemd/tailscaled-greenmind.conf" \
+            "/etc/systemd/system/tailscaled.service.d/greenmind.conf"
+        systemctl enable tailscaled.service --quiet
+    else
+        warn "tailscaled.service not installed; skipping its recovery override."
+    fi
+
     # Reload systemd
     systemctl daemon-reload
+    systemctl restart systemd-journald
 
     # Enable services (they start on boot)
     systemctl enable "${GATEWAY_SERVICE}" --quiet
     systemctl enable "${AGENT_SERVICE}" --quiet
+    systemctl enable greenmind-healthcheck.timer --quiet
 
     success "systemd services installed and enabled"
 }

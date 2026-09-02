@@ -4,10 +4,13 @@ Receives JSON from ESP32 sensors on the local network and buffers them
 in the SQLite queue for later upload to the cloud.
 """
 
+import hashlib
 import ipaddress
 import json
 import logging
+import math
 from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 
 import httpx
@@ -17,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from src.config import settings
 from src.persistence.database import get_db
-from src.persistence.models import DeadLetterJob, IngestJob
+from src.persistence.models import DeadLetterJob, IngestJob, SensorBatchCursor
 from src.validation import SensorBatch, SensorRegistration, canonical_mac
 
 logger = logging.getLogger(__name__)
@@ -68,68 +71,145 @@ class BoundedSensorIPCache:
 sensor_ips = BoundedSensorIPCache()
 
 
+def _percentile(values: list[float], fraction: float) -> float:
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    weight = position - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
+
+
+def _summarize_batch(payload: SensorBatch, values: list[float]) -> dict:
+    mean = sum(values) / len(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    quality = payload.quality_counts
+    return {
+        "kind": payload.readings[0].kind if payload.readings else payload.kind,
+        "value": round(mean, 4),
+        "unit": payload.readings[0].unit if payload.readings else payload.unit,
+        "sample_count": len(values),
+        "sample_rate_hz": float(payload.sample_rate),
+        "median": _percentile(values, 0.5),
+        "rms": math.sqrt(sum(value * value for value in values) / len(values)),
+        "standard_deviation": math.sqrt(variance),
+        "minimum": min(values),
+        "maximum": max(values),
+        "p05": _percentile(values, 0.05),
+        "p95": _percentile(values, 0.95),
+        "coverage_ratio": min(1.0, len(values) / payload.sample_rate),
+        "quality_valid_count": quality.valid if quality else None,
+        "quality_lead_off_count": quality.lead_off if quality else None,
+        "quality_rail_high_count": quality.rail_high if quality else None,
+        "quality_rail_low_count": quality.rail_low if quality else None,
+        "quality_jump_count": quality.jump if quality else None,
+        "quality_recovery_count": quality.recovery if quality else None,
+    }
+
+
 @router.post("/ingest")
 def ingest_data(request: Request, payload: SensorBatch, db: Session = Depends(get_db)):
     """Receive sensor data from ESP32 and queue for cloud upload.
 
-    High-frequency data (380 Hz) is written to WAV files locally and is ALWAYS
-    archived, regardless of cloud-queue backpressure. Only the low-resolution
-    aggregate (one mean value per batch) is subject to the queue-size guard, so
-    a saturated cloud queue can never cost us the full-resolution biosignal.
+    High-frequency data is archived before acknowledgement. Compact protocol-v3
+    batches and legacy reading objects share the same lossless local path.
     """
 
     mac = payload.mac_address
     if request.client:
         sensor_ips.remember(mac, request.client.host)
 
-    readings = payload.readings
     sample_rate = payload.sample_rate
+    raw_values = payload.decoded_values_mv()
+    payload_hash = hashlib.sha256(
+        payload.model_dump_json(exclude_none=True).encode("utf-8")
+    ).hexdigest()
 
-    # 1) Archive high-frequency raw data FIRST and unconditionally.
+    cursor = None
+    if payload.boot_id is not None and payload.sequence is not None:
+        cursor = (
+            db.query(SensorBatchCursor)
+            .filter(
+                SensorBatchCursor.mac_address == mac,
+                SensorBatchCursor.boot_id == payload.boot_id,
+            )
+            .first()
+        )
+        if cursor and payload.sequence <= cursor.last_sequence:
+            if (
+                payload.sequence == cursor.last_sequence
+                and payload_hash != cursor.last_payload_hash
+            ):
+                raise HTTPException(status_code=409, detail="Batch identity payload mismatch")
+            return {
+                "status": "duplicate",
+                "boot_id": payload.boot_id,
+                "sequence": payload.sequence,
+                "samples_archived": len(raw_values),
+            }
+
     samples_archived = 0
-    raw_values = [reading.value for reading in readings]
     if raw_values:
         from src.runtime import wav_writer
 
         try:
-            wav_writer.write_samples(mac, raw_values, sample_rate)
+            wav_writer.write_samples(
+                mac,
+                raw_values,
+                sample_rate,
+                captured_at_epoch_ms=payload.captured_at_epoch_ms,
+            )
         except wav_writer.WavStorageError as exc:
             logger.error("WAV storage refused sensor batch: %s", exc)
             raise HTTPException(status_code=507, detail="Local measurement storage unavailable")
         samples_archived = len(raw_values)
 
-    # 2) Aggregate for the cloud is best-effort: skip it (never the WAV) if all
-    #    retained queue records, including diagnostics in the DLQ, have reached
-    #    the configured bound. This prevents poison records from growing SQLite
-    #    indefinitely while preserving the full-resolution WAV archive.
-    retained_jobs = db.query(IngestJob).count() + db.query(DeadLetterJob).count()
-    if retained_jobs >= settings.max_queue_size:
-        logger.warning(
-            "Local queue storage full (%d records) – aggregate dropped, WAV still archived.",
-            retained_jobs,
-        )
-        return {
-            "status": "archived",
-            "queue_full": True,
-            "samples_archived": samples_archived,
-        }
-
     if samples_archived > 0:
-        mean_value = sum(raw_values) / len(raw_values)
-        unit = readings[0].unit
-        kind = readings[0].kind
+        summary = _summarize_batch(payload, raw_values)
 
         aggregate_payload = {
             "mac_address": mac,
             "gateway_serial": settings.hardware_id,
             "sample_rate": sample_rate,
-            "readings": [{"kind": kind, "value": round(mean_value, 2), "unit": unit}],
+            "protocol_version": payload.protocol_version,
+            "firmware_version": payload.firmware_version,
+            "calibration_version": payload.calibration_version,
+            "boot_id": payload.boot_id,
+            "sequence": payload.sequence,
+            "uptime_ms": payload.uptime_ms,
+            "dropped_samples_total": payload.dropped_samples_total,
+            "readings": [summary],
         }
 
-        payload_str = json.dumps(aggregate_payload)
+        captured_at = None
+        if payload.captured_at_epoch_ms is not None:
+            captured_end = datetime.fromtimestamp(
+                payload.captured_at_epoch_ms / 1000,
+                tz=timezone.utc,
+            )
+            captured_at = captured_end - timedelta(seconds=len(raw_values) / sample_rate)
+
+        payload_str = json.dumps(aggregate_payload, separators=(",", ":"))
         job = IngestJob(payload_json=payload_str, status="QUEUED")
+        if captured_at is not None:
+            job.created_at = captured_at
         try:
             db.add(job)
+            if payload.boot_id is not None and payload.sequence is not None:
+                if cursor is None:
+                    db.add(
+                        SensorBatchCursor(
+                            mac_address=mac,
+                            boot_id=payload.boot_id,
+                            last_sequence=payload.sequence,
+                            last_payload_hash=payload_hash,
+                        )
+                    )
+                else:
+                    cursor.last_sequence = payload.sequence
+                    cursor.last_payload_hash = payload_hash
             db.commit()
             db.refresh(job)
         except SQLAlchemyError:
@@ -139,12 +219,18 @@ def ingest_data(request: Request, payload: SensorBatch, db: Session = Depends(ge
 
         logger.debug(
             "Queued aggregate (%.1f %s from %d samples) job %d",
-            mean_value,
-            unit,
+            summary["value"],
+            summary["unit"],
             samples_archived,
             job.id,
         )
-        return {"status": "queued", "local_queue_id": job.id, "samples_archived": samples_archived}
+        return {
+            "status": "queued",
+            "boot_id": payload.boot_id,
+            "sequence": payload.sequence,
+            "local_queue_id": job.id,
+            "samples_archived": samples_archived,
+        }
 
     raise HTTPException(status_code=422, detail="Sensor batch contains no readings")
 
@@ -195,11 +281,13 @@ async def health(db: Session = Depends(get_db)):
     wav_status = storage_status()
     return {
         "status": "ok",
+        "utc_epoch_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
         "hardware_id": settings.hardware_id,
         "queue_depth": queued,
         "failed_count": failed,
         "dead_letter_count": dead_letter,
         "retained_queue_records": ingest_records + dead_letter,
+        "queue_warning": ingest_records + dead_letter >= settings.max_queue_size,
         "active_wav_writers": active_writer_count(),
         "completed_wavs_pending": wav_status["pending_files"],
         "wav_storage": wav_status,

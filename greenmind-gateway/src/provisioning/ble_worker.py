@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp
 
@@ -10,12 +11,14 @@ from src.config import settings
 
 logger = logging.getLogger(__name__)
 
-# This optional worker uses the same validated cloud origin as the core gateway.
-# HTTPS maps to WSS; explicitly enabled loopback HTTP maps to WS for local tests.
-HTTP_BASE = f"{settings.cloud_api_url}/provisioning"
-_WS_SCHEME = "wss" if settings.cloud_api_url.startswith("https://") else "ws"
-_WS_ORIGIN = settings.cloud_api_url.split("://", maxsplit=1)[1]
-WS_URL = f"{_WS_SCHEME}://{_WS_ORIGIN}/provisioning/ws"
+
+def _provisioning_urls(server_url: str) -> tuple[str, str]:
+    """Build HTTP and WebSocket URLs from one validated API base."""
+    parsed = urlsplit(server_url.rstrip("/"))
+    http_base = urlunsplit((parsed.scheme, parsed.netloc, f"{parsed.path}/provisioning", "", ""))
+    ws_scheme = "wss" if parsed.scheme == "https" else "ws"
+    ws_url = urlunsplit((ws_scheme, parsed.netloc, f"{parsed.path}/provisioning/ws", "", ""))
+    return http_base, ws_url
 
 
 class ProvisioningWorker:
@@ -23,25 +26,33 @@ class ProvisioningWorker:
         self.credentials = credentials
         self.current_job = None
         self.running = False
+        server_url = credentials.get("server_url") or settings.cloud_api_url
+        self.http_base, self.ws_url = _provisioning_urls(server_url)
+        self.headers = {"X-Api-Key": credentials["api_key"]}
 
     async def start(self):
         self.running = True
         logger.info("Starting BLE Provisioning Worker...")
 
+        retry_delay = 30
         while self.running:
             try:
                 # Try WebSocket first
                 await self._run_websocket()
             except Exception as e:
-                logger.warning(f"WebSocket disconnected or failed: {e}. Falling back to polling.")
+                logger.warning(
+                    "Provisioning WebSocket unavailable (%s); using bounded polling",
+                    type(e).__name__,
+                )
                 # Fallback to polling
                 await self._run_polling()
 
-            await asyncio.sleep(5)
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(15 * 60, retry_delay * 2)
 
     async def _run_websocket(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(WS_URL) as ws:
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            async with session.ws_connect(self.ws_url) as ws:
                 logger.info("Connected to Provisioning WebSocket")
 
                 # Check for pending jobs immediately upon connection
@@ -57,19 +68,19 @@ class ProvisioningWorker:
                         break
 
     async def _run_polling(self):
-        async with aiohttp.ClientSession() as session:
-            for _ in range(6):  # Poll for ~30 seconds before retrying WS
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            for _ in range(6):
                 if not self.running:
                     break
                 await self._check_pending_jobs(session)
-                await asyncio.sleep(10)
+                await asyncio.sleep(60)
 
     async def _check_pending_jobs(self, session: aiohttp.ClientSession):
         if self.current_job is not None:
             return  # Already processing a job
 
         try:
-            async with session.get(f"{HTTP_BASE}/jobs/pending") as resp:
+            async with session.get(f"{self.http_base}/jobs/pending") as resp:
                 if resp.status == 200:
                     jobs = await resp.json()
                     if jobs:
@@ -105,7 +116,10 @@ class ProvisioningWorker:
 
     async def _update_job_status(self, session: aiohttp.ClientSession, job_id: str, status: str):
         try:
-            async with session.patch(f"{HTTP_BASE}/jobs/{job_id}", json={"status": status}) as resp:
+            async with session.patch(
+                f"{self.http_base}/jobs/{job_id}",
+                json={"status": status},
+            ) as resp:
                 if resp.status not in (200, 204):
                     logger.error(f"Failed to update job {job_id} to {status}: HTTP {resp.status}")
         except Exception as e:

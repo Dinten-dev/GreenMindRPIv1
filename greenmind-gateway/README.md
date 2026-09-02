@@ -280,9 +280,8 @@ When the cloud is unreachable:
    queue indefinitely with capped exponential backoff (10s → 300s)
 4. Only malformed local JSON and individually confirmed HTTP 422 validation
    failures move to the Dead Letter Queue
-5. Queue capacity: 100,000 retained ingest and dead-letter records combined
-   (configurable via `MAX_QUEUE_SIZE`); when full, the 1 Hz aggregate is skipped
-   but the raw WAV batch remains archived
+5. `MAX_QUEUE_SIZE` is an alert threshold, never a deletion trigger
+6. Disk guards return HTTP 507 before accepting unretained measurements
 
 ---
 
@@ -342,7 +341,7 @@ All configuration is via `/opt/greenmind/.env` (created by the installer). See `
 | `LOG_LEVEL` | Logging verbosity | `INFO` |
 | `UPLOAD_INTERVAL` | Cloud upload interval (seconds) | `10` |
 | `HEARTBEAT_INTERVAL` | Health telemetry interval (seconds) | `60` |
-| `MAX_QUEUE_SIZE` | Maximum combined ingest + dead-letter records | `100000` |
+| `MAX_QUEUE_SIZE` | Local queue warning threshold | `1000000` |
 | `MAX_REQUEST_BODY_BYTES` | Maximum local HTTP body before parsing | `262144` |
 | `MAX_HTTP_CONCURRENCY` | Maximum concurrent local HTTP connections | `128` |
 | `HTTP_KEEPALIVE_SECONDS` | Idle HTTP keep-alive timeout | `5` |
@@ -350,9 +349,10 @@ All configuration is via `/opt/greenmind/.env` (created by the installer). See `
 | `ALLOWED_SAMPLE_RATES` | Accepted sensor rates (JSON list) | `[380]` |
 | `WAV_DIR` | WAV archive directory | `/opt/greenmind/data/wav` |
 | `WAV_CHUNK_MINUTES` | WAV file chunk duration (minutes) | `10` |
+| `WAV_IDLE_FINALIZE_SECONDS` | Finalize inactive WAV chunks | `120` |
 | `WAV_MAX_OPEN_WRITERS` | LRU-bounded active sensor writers | `64` |
-| `WAV_MIN_FREE_BYTES` | Stop new archival below free-space threshold | `268435456` |
-| `WAV_MAX_PENDING_BYTES` | Stop new archival at unacknowledged-byte threshold | `21474836480` |
+| `WAV_MIN_FREE_BYTES` | Stop new archival below free-space threshold | `8589934592` |
+| `WAV_MAX_PENDING_BYTES` | Retained unacknowledged WAV limit | `103079215104` |
 | `ENABLE_BLE_PROVISIONING` | Start retained experimental BLE worker | `false` |
 | `ENABLE_EXPERIMENTAL_BIOSIGNAL_PROXY` | Enable non-durable compatibility proxy | `false` |
 

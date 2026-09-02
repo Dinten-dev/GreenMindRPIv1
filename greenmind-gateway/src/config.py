@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Queue limits
-    max_queue_size: int = Field(default=100_000, ge=100, le=10_000_000)
+    max_queue_size: int = Field(default=1_000_000, ge=100, le=10_000_000)
 
     # Local HTTP ingress limits. Sensor packets are deliberately bounded before
     # FastAPI parses JSON so malformed clients cannot allocate memory without
@@ -88,11 +88,12 @@ class Settings(BaseSettings):
     # WAV archival
     wav_dir: str = "/opt/greenmind/data/wav"
     wav_chunk_minutes: int = Field(default=10, ge=1, le=1440)
+    wav_idle_finalize_seconds: int = Field(default=120, ge=10, le=3600)
     wav_max_open_writers: int = Field(default=64, ge=1, le=4096)
     wav_flush_interval_seconds: int = Field(default=5, ge=1, le=300)
-    wav_min_free_bytes: int = Field(default=256 * 1024 * 1024, ge=0)
-    wav_max_pending_files: int = Field(default=10_000, ge=1)
-    wav_max_pending_bytes: int = Field(default=20 * 1024 * 1024 * 1024, ge=1024)
+    wav_min_free_bytes: int = Field(default=8 * 1024 * 1024 * 1024, ge=0)
+    wav_max_pending_files: int = Field(default=250_000, ge=1)
+    wav_max_pending_bytes: int = Field(default=96 * 1024 * 1024 * 1024, ge=1024)
     wav_warn_pending_age_hours: int = Field(default=72, ge=1)
 
     # The vendored BLE implementation is retained for compatibility, but is not

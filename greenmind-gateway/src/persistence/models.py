@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -31,3 +31,23 @@ class DeadLetterJob(Base):
     payload_json = Column(Text, nullable=False)
     error_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class SensorBatchCursor(Base):
+    """Persistent high-water mark preventing replayed ESP batches."""
+
+    __tablename__ = "sensor_batch_cursors"
+    __table_args__ = (
+        UniqueConstraint("mac_address", "boot_id", name="uq_sensor_batch_cursor_identity"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    mac_address = Column(String(17), nullable=False, index=True)
+    boot_id = Column(Integer, nullable=False)
+    last_sequence = Column(Integer, nullable=False)
+    last_payload_hash = Column(String(64), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
