@@ -4,6 +4,27 @@
 
 ---
 
+## Gateway / Direct parallel operation on develop
+
+The reviewed `develop` release includes compact protocol-v3 reception and durable
+Gateway buffering from `afda66c`, while retaining legacy protocol-v1 `readings`
+and protocol-v2 quality metadata. Direct firmware's DUAL packets are accepted at
+the same `/api/v1/ingest` endpoint and acknowledged with sequence/sample count.
+Replayed boot/sequence packets return `duplicate` without another WAV write.
+
+To verify a Pi's compatibility, query its local `/api/v1/health`: this release
+adds `ingest_protocol_versions: [1, 2, 3]` and `sequence_acknowledgement: true`.
+An older Gateway lacking those capabilities must be explicitly upgraded before
+using the new firmware's DUAL mode. Publishing develop does not upgrade any Pi.
+Resolve and review the full develop commit ID and use the pinned installer below;
+never deploy an unreviewed moving branch automatically. Preserve the Pi's queued
+WAVs, SQLite database and credentials during upgrades.
+
+Old Gateway-only sensors require no firmware changes. A separate Direct sensor
+population can run alongside them without upgrading every Gateway. For the same
+sensor in DUAL, provision the matching existing sensor/zone and Direct identity
+explicitly. The two cloud archives remain separate to avoid double counting.
+
 ## Quick Start
 
 ### Pinned, Reviewed Install

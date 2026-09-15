@@ -281,6 +281,8 @@ async def health(db: Session = Depends(get_db)):
     wav_status = storage_status()
     return {
         "status": "ok",
+        "ingest_protocol_versions": [1, 2, 3],
+        "sequence_acknowledgement": True,
         "utc_epoch_ms": int(datetime.now(timezone.utc).timestamp() * 1000),
         "hardware_id": settings.hardware_id,
         "queue_depth": queued,

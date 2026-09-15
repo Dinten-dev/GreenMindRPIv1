@@ -360,3 +360,52 @@ def test_ingest_reports_storage_exhaustion(monkeypatch):
     monkeypatch.setattr(wav_writer, "write_samples", refuse)
     response = TestClient(app).post("/api/v1/ingest", json=valid_payload())
     assert response.status_code == 507
+
+
+def test_legacy_and_dual_packets_coexist_with_replay_ack(monkeypatch):
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+
+    def override_db():
+        with sessions() as session:
+            yield session
+
+    writes = []
+    monkeypatch.setattr(wav_writer, "write_samples", lambda *a, **kw: writes.append((a, kw)))
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+    dual = {
+        "mac_address": "11:22:33:44:55:66",
+        "sample_rate": 380,
+        "protocol_version": 3,
+        "boot_id": 0x12345678,
+        "sequence": 9,
+        "kind": "bio_signal",
+        "unit": "mV",
+        "value_scale_mv": 0.1,
+        "values_deci_mv": [1234] * 380,
+    }
+    # Match the actual Direct firmware request and its required ACK contract.
+    assert client.post("/api/v1/ingest", json=valid_payload()).status_code == 200
+    first = client.post("/api/v1/ingest", json=dual)
+    replay = client.post("/api/v1/ingest", json=dual)
+    for response in (first, replay):
+        assert response.status_code == 200
+        assert response.json()["sequence"] == 9
+        assert response.json()["samples_archived"] == 380
+    assert first.json()["status"] == "queued"
+    assert replay.json()["status"] == "duplicate"
+    assert client.post("/api/v1/ingest", json=valid_payload(protocol_version=2)).status_code == 200
+    assert len(writes) == 3
+    health = client.get("/api/v1/health")
+    assert health.status_code == 200
+    assert health.json()["ingest_protocol_versions"] == [1, 2, 3]
+    assert health.json()["sequence_acknowledgement"] is True
+    with sessions() as session:
+        assert session.query(IngestJob).count() == 3
+    engine.dispose()
