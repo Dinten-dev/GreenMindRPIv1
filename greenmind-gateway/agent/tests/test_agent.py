@@ -491,3 +491,50 @@ class TestConfigValidation:
             backup = backups_dir / "last_good_config.json"
             assert backup.exists()
             assert json.loads(backup.read_text()) == {"old": True}
+
+
+def test_cloud_outage_does_not_apply_updates_or_restart_gateway(tmp_path, monkeypatch):
+    import greenmind_agent as agent
+    import httpx
+
+    class StopSimulation(BaseException):
+        pass
+
+    monkeypatch.setattr(
+        agent,
+        "load_secrets",
+        lambda: {
+            "api_key": "local-only",
+            "gateway_id": "local",
+            "server_url": "https://cloud.invalid",
+        },
+    )
+    monkeypatch.setattr(agent, "load_state", lambda: {})
+    monkeypatch.setattr(agent, "save_state", MagicMock())
+    monkeypatch.setattr(agent, "report_state", MagicMock())
+    monkeypatch.setattr(agent.time, "sleep", lambda _: None)
+    for key in ("RELEASES_DIR", "CONFIG_VERSIONS_DIR", "BACKUPS_DIR", "CONFIG_DIR", "CURRENT_LINK"):
+        monkeypatch.setattr(agent, key, tmp_path / key)
+    hooks = [MagicMock() for _ in range(4)]
+    for key, hook in zip(
+        ("_handle_app_update", "_handle_config_update", "execute_command", "run_healthcheck_suite"),
+        hooks,
+        strict=True,
+    ):
+        monkeypatch.setattr(agent, key, hook)
+    client = MagicMock()
+    client.__enter__.return_value = client
+    request = httpx.Request("GET", "https://cloud.invalid/api/v1/gateway/desired-state")
+    client.get.side_effect = [
+        httpx.Response(503, request=request),
+        httpx.ConnectError("offline", request=request),
+        httpx.ReadTimeout("timeout", request=request),
+        httpx.Response(200, text="invalid json", request=request),
+        httpx.Response(401, request=request),
+        StopSimulation(),
+    ]
+    monkeypatch.setattr(agent.httpx, "Client", lambda **_: client)
+    with pytest.raises(StopSimulation):
+        agent.main()
+    assert client.get.call_count == 6
+    assert all(hook.call_count == 0 for hook in hooks)
