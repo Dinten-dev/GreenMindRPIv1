@@ -51,6 +51,8 @@ class Settings(BaseSettings):
 
     # Cloud backend
     allow_insecure_cloud_http: bool = False
+    # A cloud deletion must not erase an unattended gateway by default.
+    allow_remote_reset: bool = False
     cloud_api_url: str = "https://green-mind.ch/api/v1"
     firmware_api_url: str = "https://green-mind.ch/api/v1"
     backend_host: str = "green-mind.ch"

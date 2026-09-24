@@ -253,7 +253,9 @@ class _SensorWriter:
             if self._captured_end is None or batch_end > self._captured_end:
                 self._captured_end = batch_end
         self._last_write = time.monotonic()
-        self._flush_if_due()
+        # The sensor discards its pending packet after our ACK. Persist every
+        # accepted batch instead of leaving up to five seconds in process RAM.
+        self._flush_if_due(force=True)
         return completed_path
 
     def close(self) -> str | None:

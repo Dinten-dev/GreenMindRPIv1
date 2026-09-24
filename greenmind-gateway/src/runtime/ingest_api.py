@@ -69,6 +69,7 @@ class BoundedSensorIPCache:
 
 
 sensor_ips = BoundedSensorIPCache()
+_ingest_lock = Lock()
 
 
 def _percentile(values: list[float], fraction: float) -> float:
@@ -117,6 +118,14 @@ def ingest_data(request: Request, payload: SensorBatch, db: Session = Depends(ge
     batches and legacy reading objects share the same lossless local path.
     """
 
+    # A concurrent retry must not pass the cursor check while the first request
+    # is still appending WAV data. Runtime uses one uvicorn process; the WAV
+    # writer already serializes all writes within that process.
+    with _ingest_lock:
+        return _ingest_data(request, payload, db)
+
+
+def _ingest_data(request: Request, payload: SensorBatch, db: Session):
     mac = payload.mac_address
     if request.client:
         sensor_ips.remember(mac, request.client.host)

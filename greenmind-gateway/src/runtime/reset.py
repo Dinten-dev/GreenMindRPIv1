@@ -11,6 +11,9 @@ logger = logging.getLogger(__name__)
 
 async def trigger_remote_reset() -> None:
     """Wipe credentials, delete WiFi profiles, and restart in setup mode."""
+    if not settings.allow_remote_reset:
+        logger.error("Cloud reset ignored: local ALLOW_REMOTE_RESET is disabled")
+        return
     logger.critical("Triggering remote reset. Wiping all local data.")
 
     # 1. Wipe SecretStore

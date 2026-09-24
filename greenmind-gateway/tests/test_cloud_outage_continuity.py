@@ -23,6 +23,7 @@ def test_cloud_failures_keep_ingest_health_and_local_samples_running(tmp_path, m
     monkeypatch.setattr(database, "SessionLocal", None)
     monkeypatch.setattr(settings, "wav_dir", str(tmp_path / "wav"))
     monkeypatch.setattr(settings, "wav_min_free_bytes", 0)
+    monkeypatch.setattr(settings, "allow_remote_reset", False)
     monkeypatch.setattr(wav_writer, "_get_cached_ntp", lambda: False)
     monkeypatch.setattr(wav_writer, "_storage_cache", None)
     monkeypatch.setattr(wav_uploader, "_retry_state", {})
@@ -42,6 +43,8 @@ def test_cloud_failures_keep_ingest_health_and_local_samples_running(tmp_path, m
             raise httpx.ConnectError("simulated DNS failure", request=request)
         if phase["mode"] == "timeout":
             raise httpx.ReadTimeout("simulated timeout", request=request)
+        if phase["mode"] == 410:
+            return httpx.Response(410, json={"detail": {"action": "RESET_TO_SETUP_MODE"}})
         if phase["mode"] != "recovered":
             return httpx.Response(phase["mode"], json={"detail": "unavailable"})
         if request.url.path.endswith("/commands"):
@@ -82,7 +85,7 @@ def test_cloud_failures_keep_ingest_health_and_local_samples_running(tmp_path, m
             async with original_client(
                 transport=httpx.ASGITransport(app=app), base_url="http://local"
             ) as local:
-                for mode in (503, 401, 403, 502, "dns", "timeout"):
+                for mode in (503, 401, 403, 410, 502, "dns", "timeout"):
                     phase["mode"] = mode
                     before = phase["calls"]
                     for _ in range(3):
@@ -102,7 +105,7 @@ def test_cloud_failures_keep_ingest_health_and_local_samples_running(tmp_path, m
                     assert phase["calls"] > before
                     assert all(not task.done() for task in tasks)
                 with Session(database.engine) as db:
-                    assert db.query(IngestJob).count() == 18
+                    assert db.query(IngestJob).count() == 21
                     assert db.query(DeadLetterJob).count() == 0
                 wav_writer.close_all()
                 [wav] = wav_uploader._find_completed_wavs(settings.wav_dir)

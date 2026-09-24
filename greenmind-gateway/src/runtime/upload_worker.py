@@ -244,7 +244,7 @@ async def _flush_group(
         else:
             detail = data.get("detail") if isinstance(data, dict) else None
             action = detail.get("action") if isinstance(detail, dict) else None
-            if action == "RESET_TO_SETUP_MODE":
+            if action == "RESET_TO_SETUP_MODE" and settings.allow_remote_reset:
                 logger.critical("Gateway deleted remotely. Initiating reset sequence.")
                 from src.runtime.reset import trigger_remote_reset
 

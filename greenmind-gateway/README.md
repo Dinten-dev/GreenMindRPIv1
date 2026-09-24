@@ -1,5 +1,9 @@
 # GreenMind Raspberry Pi Gateway
 
+Field candidate and acceptance checklist: [25 September 2026](docs/GREENHOUSE-2026-09-25.md).
+New gateways need more than 8 GiB free with the default WAV storage reserve.
+Cloud-triggered destructive resets are disabled unless explicitly enabled locally.
+
 > Production-ready edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes at 380 Hz, archives raw data as WAV files, buffers aggregates locally in SQLite, and uploads to the cloud backend. Includes a **desired-state update agent** for secure over-the-air remote management.
 
 ---

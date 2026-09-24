@@ -64,7 +64,10 @@ async def heartbeat_loop(credentials: dict) -> None:
                 elif resp.status_code == 410:
                     try:
                         data = resp.json()
-                        if data.get("detail", {}).get("action") == "RESET_TO_SETUP_MODE":
+                        if (
+                            data.get("detail", {}).get("action") == "RESET_TO_SETUP_MODE"
+                            and settings.allow_remote_reset
+                        ):
                             logger.critical("Gateway deleted remotely. Initiating reset sequence.")
                             from src.runtime.reset import trigger_remote_reset
 
