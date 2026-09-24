@@ -1,5 +1,8 @@
 # Gewächshaus: Gateway-Kandidat vom 24.09.2026
 
+[Quellpaket von GitHub herunterladen](https://github.com/Dinten-dev/GreenMindRPIv1/releases/tag/field-2026-09-25).
+[Quellcode auf main](https://github.com/Dinten-dev/GreenMindRPIv1/tree/main).
+
 Den vollen Commit aus dem Feldpaket verwenden. Dieser Kandidat wurde auf dem
 Entwicklungsrechner geprüft, noch nicht auf der neuen Pi-Speicherkarte.
 Bestehende Gateways wurden weder neugestartet noch aktualisiert.
