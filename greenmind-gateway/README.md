@@ -1,16 +1,16 @@
 # GreenMind Raspberry Pi Gateway
 
-Field candidate and acceptance checklist: [25 September 2026](docs/GREENHOUSE-2026-09-25.md).
+Current [installation and maintenance](../docs/gateway-installation.md) · [downloads](../docs/downloads.md).
 New gateways need more than 8 GiB free with the default WAV storage reserve.
 Cloud-triggered destructive resets are disabled unless explicitly enabled locally.
 
-> Production-ready edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes at 380 Hz, archives raw data as WAV files, buffers aggregates locally in SQLite, and uploads to the cloud backend. Includes a **desired-state update agent** for secure over-the-air remote management.
+> Research edge gateway for the GreenMind IoT platform. Receives bioelectrical sensor data from ESP32 nodes at 380 Hz, archives raw data as WAV files, buffers aggregates locally in SQLite, and uploads to the cloud backend. Includes a **desired-state update agent** for secure over-the-air remote management.
 
 ---
 
-## Gateway / Direct parallel operation on develop
+## Gateway / Direct protocol compatibility
 
-The reviewed `develop` release includes compact protocol-v3 reception and durable
+The current reviewed source includes compact protocol-v3 reception and durable
 Gateway buffering from `afda66c`, while retaining legacy protocol-v1 `readings`
 and protocol-v2 quality metadata. Direct firmware's DUAL packets are accepted at
 the same `/api/v1/ingest` endpoint and acknowledged with sequence/sample count.
@@ -19,8 +19,8 @@ Replayed boot/sequence packets return `duplicate` without another WAV write.
 To verify a Pi's compatibility, query its local `/api/v1/health`: this release
 adds `ingest_protocol_versions: [1, 2, 3]` and `sequence_acknowledgement: true`.
 An older Gateway lacking those capabilities must be explicitly upgraded before
-using the new firmware's DUAL mode. Publishing develop does not upgrade any Pi.
-Resolve and review the full develop commit ID and use the pinned installer below;
+using the new firmware's DUAL mode. Publishing source does not upgrade any Pi.
+Resolve and review the full release commit ID and use the pinned installer below;
 never deploy an unreviewed moving branch automatically. Preserve the Pi's queued
 WAVs, SQLite database and credentials during upgrades.
 
@@ -29,7 +29,9 @@ population can run alongside them without upgrading every Gateway. For the same
 sensor in DUAL, provision the matching existing sensor/zone and Direct identity
 explicitly. The two cloud archives remain separate to avoid double counting.
 
-## Quick Start
+## New Gateway installation reference
+
+For an existing field Pi, use the [manual maintenance guide](../docs/gateway-installation.md#existing-gateway-maintenance). The installer below enables the update agent and starts services.
 
 ### Pinned, Reviewed Install
 
@@ -90,7 +92,7 @@ explicit operator decision; the installer never follows a branch or tag.
 - **Hardware:** Raspberry Pi 4/5 (or Zero 2 W) with ARM64
 - **OS:** Raspberry Pi OS Lite — Debian Bookworm, 64-bit
 - **Network:** Internet connection for initial setup
-- **Disk:** ≥ 500 MB free on `/opt`
+- **Disk:** More than 8 GiB free for the default WAV reserve, plus application and OS space
 
 > ⚠️ The installer checks for ARM architecture and warns on non-Pi systems.
 
@@ -113,25 +115,9 @@ WAV, firmware, secret, or log artifacts in the checkout:
 .venv/bin/python run_load_test.py
 ```
 
-### ⚡ Stromversorgung der Sensoren (WICHTIG)
+### Sensor power supply
 
-> **Jeder ESP32-Sensor MUSS über ein eigenes USB-Netzteil versorgt werden.**
-
-Die Sensoren dürfen **nicht** an den USB-Ports des Raspberry Pi angeschlossen werden. Durch die gemeinsame Masse (Ground) entsteht eine 50-Hz-Masseschleife mit der Netzstromversorgung, die den AD8232-Verstärker in Sättigung treibt (Railing). Das Biosignal wird dadurch vollständig mit Netzbrumm überlagert und ist nicht verwertbar.
-
-```
-✅ RICHTIG                          ❌ FALSCH
-                                    
-Steckdose ─── Netzteil A ─── RPi    Steckdose ─── Netzteil ─── RPi
-Steckdose ─── Netzteil B ─── ESP32              └── USB ──── ESP32
-                                                    ↑ 50 Hz Masseschleife!
-```
-
-**Empfohlene Netzteile:**
-- Sensor: USB 5V / 500 mA (beliebiger USB-Adapter)
-- Raspberry Pi: offizielles RPi-Netzteil (5V / 3A)
-
-> Dieses Problem wurde im Pilotbetrieb (Gloor, Juni 2026) identifiziert. Die neue Firmware v1.0.2 enthält zusätzlich einen digitalen 50-Hz-Notchfilter als Absicherung, die physische Trennung der Stromversorgung bleibt aber zwingend.
+Use an independent USB power supply for each sensor. Shared Pi USB grounding can introduce mains interference; check the real signal before field acceptance.
 
 ---
 
@@ -378,7 +364,7 @@ All configuration is via `/opt/greenmind/.env` (created by the installer). See `
 | `WAV_MAX_OPEN_WRITERS` | LRU-bounded active sensor writers | `64` |
 | `WAV_MIN_FREE_BYTES` | Stop new archival below free-space threshold | `8589934592` |
 | `WAV_MAX_PENDING_BYTES` | Retained unacknowledged WAV limit | `103079215104` |
-| `ENABLE_BLE_PROVISIONING` | Start retained experimental BLE worker | `false` |
+| `ENABLE_BLE_PROVISIONING` | Deprecated; runtime ignores this flag and does not start the BLE worker | `false` |
 | `ENABLE_EXPERIMENTAL_BIOSIGNAL_PROXY` | Enable non-durable compatibility proxy | `false` |
 
 > 🔒 The `.env` file is secured with `chmod 640 root:greenmind` — only root and the gateway user can read it. **Never commit `.env` files with real credentials.**

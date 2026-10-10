@@ -9,8 +9,8 @@ delete them.
 from __future__ import annotations
 
 import array
-import logging
 import json
+import logging
 import math
 import os
 import re
