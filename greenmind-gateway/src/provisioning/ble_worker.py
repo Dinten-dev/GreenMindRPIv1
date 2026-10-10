@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 def _provisioning_urls(server_url: str) -> tuple[str, str]:
     """Build HTTP and WebSocket URLs from one validated API base."""
     parsed = urlsplit(server_url.rstrip("/"))
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("Provisioning requires an HTTP(S) API base")
+    if parsed.scheme == "http" and parsed.port == 443:
+        parsed = parsed._replace(scheme="https")
     http_base = urlunsplit((parsed.scheme, parsed.netloc, f"{parsed.path}/provisioning", "", ""))
     ws_scheme = "wss" if parsed.scheme == "https" else "ws"
     ws_url = urlunsplit((ws_scheme, parsed.netloc, f"{parsed.path}/provisioning/ws", "", ""))

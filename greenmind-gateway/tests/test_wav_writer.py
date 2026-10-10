@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pathlib import Path
 
 from src.config import settings
 from src.runtime import wav_writer
@@ -35,6 +36,24 @@ def test_conversion_equivalence():
         "h", (int(max(0.0, min(value, 3300.0)) * (32767 / 3300.0)) for value in values)
     ).tobytes()
     assert old_method == new_method
+
+
+def test_diagnostic_metadata_failure_never_blocks_wav_delivery(
+    monkeypatch, isolated_wav_storage, caplog
+):
+    original = Path.open
+
+    def open_file(path, *args, **kwargs):
+        if str(path).endswith(".wav.json"):
+            raise OSError("diagnostic sidecar unavailable")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", open_file)
+    wav_writer.write_samples("AA:BB:CC:DD:EE:FF", [1000.0] * 380)
+    [completed] = wav_writer.close_all()
+    with wave.open(completed, "rb") as reader:
+        assert reader.getnframes() == 380
+    assert "WAV_CAPTURE_METADATA_UNAVAILABLE" in caplog.text
 
 
 def test_active_chunk_is_hidden_until_atomic_finalize(isolated_wav_storage):
@@ -191,3 +210,34 @@ def test_recovers_valid_part_file(isolated_wav_storage):
     assert not part.exists()
     with wave.open(str(final), "rb") as reader:
         assert reader.getnframes() == 3
+
+
+def test_missing_samples_warn_without_blocking_upload(caplog, isolated_wav_storage):
+    import json
+    from pathlib import Path
+
+    writer = wav_writer._SensorWriter("AA:BB:CC:DD:EE:FF", 380)
+    start = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
+    writer.write([1650] * 380, start)
+    writer._sample_count = 380  # the next arrival rotates a sparse ten-minute bucket
+    with caplog.at_level("WARNING"):
+        completed = writer.write([1650] * 380, start + timedelta(minutes=10))
+    assert completed and Path(completed).is_file()
+    assert "WAV_INCOMPLETE" in caplog.text
+    item = json.loads(Path(completed).with_suffix(".wav.json").read_text())
+    assert item["expected_samples"] == 228000
+    assert item["received_samples"] == 380
+    assert item["close_reason"] == "rotation"
+    writer.close()
+
+
+def test_shutdown_metadata_marks_a_partial_window(isolated_wav_storage):
+    import json
+    from pathlib import Path
+
+    writer = wav_writer._SensorWriter("AA:BB:CC:DD:EE:FF", 380)
+    start = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
+    writer.write([1650] * 380, start)
+    item = json.loads(Path(writer.close()).with_suffix(".wav.json").read_text())
+    assert item["close_reason"] == "shutdown"
+    assert item["expected_samples"] == item["received_samples"] == 380

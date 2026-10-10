@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import array
 import logging
+import json
 import math
 import os
 import re
@@ -192,7 +193,11 @@ def _new_chunk_paths(directory: Path, mac_clean: str, now: datetime) -> tuple[Pa
         suffix = "" if sequence == 0 else f"_{sequence:03d}"
         final_path = directory / f"{mac_clean}_{timestamp}{suffix}.wav"
         part_path = final_path.with_suffix(".wav.part")
-        if not final_path.exists() and not part_path.exists():
+        if (
+            not final_path.exists()
+            and not part_path.exists()
+            and not final_path.with_suffix(".wav.json").exists()
+        ):
             return part_path, final_path
     raise WavStorageError("could not allocate a unique WAV filename")
 
@@ -258,10 +263,10 @@ class _SensorWriter:
         self._flush_if_due(force=True)
         return completed_path
 
-    def close(self) -> str | None:
+    def close(self, reason: str = "shutdown") -> str | None:
         if self._writer is None:
             return None
-        return self._close_current()
+        return self._close_current(reason)
 
     def _open_new_chunk(
         self,
@@ -301,7 +306,7 @@ class _SensorWriter:
             os.fsync(self._file.fileno())
             self._last_flush = now
 
-    def _close_current(self) -> str:
+    def _close_current(self, reason: str = "rotation") -> str:
         assert self._part_path is not None and self._final_path is not None
         part_path = self._part_path
         final_path = self._final_path
@@ -320,6 +325,50 @@ class _SensorWriter:
             if self._captured_end is not None:
                 captured_timestamp = self._captured_end.timestamp()
                 os.utime(part_path, (captured_timestamp, captured_timestamp))
+            interval = settings.wav_chunk_minutes * 60
+            start_epoch = started_at.timestamp() if started_at else time.time()
+            bucket_end = (math.floor(start_epoch / interval) + 1) * interval
+            capture_end = self._captured_end.timestamp() if self._captured_end else time.time()
+            window_end = bucket_end if reason == "rotation" else min(bucket_end, capture_end)
+            expected = max(0, round((window_end - start_epoch) * self.sample_rate))
+            metadata = {
+                "version": 1,
+                "sample_rate": self.sample_rate,
+                "received_samples": self._sample_count,
+                "expected_samples": expected,
+                "started_at": start_epoch,
+                "ended_at": window_end,
+                "close_reason": reason,
+                "nominal_seconds": interval,
+            }
+            # Publish metadata before the WAV becomes uploader-visible.
+            try:
+                with final_path.with_suffix(".wav.json").open("x") as output:
+                    json.dump(metadata, output, separators=(",", ":"))
+                    output.flush()
+                    os.fsync(output.fileno())
+            except OSError:
+                # Diagnostic metadata must never prevent existing WAV delivery.
+                logger.warning("WAV_CAPTURE_METADATA_UNAVAILABLE file=%s", final_path.name)
+            missing = max(0, expected - self._sample_count)
+            if missing > 1:
+                logger.warning(
+                    "WAV_INCOMPLETE sensor=%s file=%s received=%d expected=%d missing_seconds=%.3f coverage=%.5f reason=%s",
+                    self.mac,
+                    final_path.name,
+                    self._sample_count,
+                    expected,
+                    missing / self.sample_rate,
+                    self._sample_count / expected,
+                    reason,
+                )
+            elif reason != "rotation":
+                logger.info(
+                    "WAV_PARTIAL_WINDOW sensor=%s reason=%s samples=%d",
+                    self.mac,
+                    reason,
+                    self._sample_count,
+                )
             os.replace(part_path, final_path)
             _fsync_directory(final_path.parent)
             _invalidate_storage_cache()
@@ -344,7 +393,7 @@ class _SensorWriter:
         return str(final_path)
 
     def _rotate(self) -> str:
-        return self._close_current()
+        return self._close_current("rotation")
 
     @property
     def ntp_synced(self) -> bool:
@@ -369,7 +418,7 @@ def write_samples(
         if writer is None:
             if len(_writers) >= settings.wav_max_open_writers:
                 _, oldest = _writers.popitem(last=False)
-                oldest.close()
+                oldest.close("eviction")
             writer = _SensorWriter(canonical, sample_rate)
             _writers[canonical] = writer
         elif writer.sample_rate != sample_rate:
@@ -392,7 +441,7 @@ def finalize_idle_writers(idle_seconds: int) -> list[str]:
         for mac, writer in tuple(_writers.items()):
             if writer.idle_seconds < idle_seconds:
                 continue
-            path = writer.close()
+            path = writer.close("idle")
             if path:
                 paths.append(path)
             del _writers[mac]

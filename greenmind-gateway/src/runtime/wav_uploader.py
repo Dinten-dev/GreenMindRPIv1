@@ -8,6 +8,8 @@ the local copy on success.
 import asyncio
 import hashlib
 import logging
+import json
+import math
 import os
 import re
 import time
@@ -163,6 +165,48 @@ def _read_wav_metadata(filepath: Path, started_at: datetime) -> tuple[int, datet
     return sample_rate, max(inferred_end, modified_end)
 
 
+def _read_capture_metadata(filepath: Path) -> dict | None:
+    companion = filepath.with_suffix(".wav.json")
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        with os.fdopen(os.open(companion, flags), "rb") as source:
+            raw = source.read(4097)
+        if len(raw) > 4096:
+            return None
+        item = json.loads(raw)
+        if not isinstance(item, dict):
+            return None
+        with wave.open(str(filepath), "rb") as reader:
+            if (
+                item.get("received_samples") != reader.getnframes()
+                or item.get("sample_rate") != reader.getframerate()
+            ):
+                return None
+        if item.get("version") != 1 or item.get("close_reason") not in (
+            "rotation",
+            "shutdown",
+            "idle",
+            "eviction",
+        ):
+            return None
+        if not all(
+            isinstance(item.get(k), (int, float)) and math.isfinite(item[k])
+            for k in ("started_at", "ended_at", "expected_samples")
+        ):
+            return None
+        if (
+            not 0
+            <= item["expected_samples"]
+            <= settings.wav_chunk_minutes * 60 * item["sample_rate"]
+        ):
+            return None
+        if not 0 <= item["ended_at"] - item["started_at"] <= settings.wav_chunk_minutes * 60:
+            return None
+        return item
+    except (OSError, ValueError, TypeError, wave.Error):
+        return None
+
+
 async def upload_loop(credentials: dict) -> None:
     """Continuously scan for completed WAV files and upload them."""
     api_key = credentials["api_key"]
@@ -204,6 +248,12 @@ async def upload_loop(credentials: dict) -> None:
                         sample_rate, ended_at = await asyncio.to_thread(
                             _read_wav_metadata, filepath, meta["started_at"]
                         )
+                        capture = await asyncio.to_thread(_read_capture_metadata, filepath)
+                        if capture:
+                            ended_at = datetime.fromtimestamp(capture["ended_at"], tz=timezone.utc)
+                            meta["started_at"] = datetime.fromtimestamp(
+                                capture["started_at"], tz=timezone.utc
+                            )
                         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
                         descriptor = os.open(filepath, flags)
                         with os.fdopen(descriptor, "rb") as f:
@@ -220,6 +270,14 @@ async def upload_loop(credentials: dict) -> None:
                                 "calibration_version": _CALIBRATION_VERSION,
                             }
 
+                            if capture:
+                                data.update(
+                                    {
+                                        "received_samples": str(capture["received_samples"]),
+                                        "expected_samples": str(capture["expected_samples"]),
+                                        "close_reason": capture["close_reason"],
+                                    }
+                                )
                             resp = await client.post(
                                 f"{server_url}/wav/upload",
                                 files=files,
@@ -252,6 +310,14 @@ async def upload_loop(credentials: dict) -> None:
                             )
                             # Only an explicit successful response acknowledges deletion.
                             filepath.unlink(missing_ok=True)
+                            companion = filepath.with_suffix(".wav.json")
+                            try:
+                                if companion.is_file() and not companion.is_symlink():
+                                    companion.unlink()
+                            except OSError:
+                                logger.warning(
+                                    "Could not remove acknowledged WAV companion %s", companion.name
+                                )
                             _record_success(filepath)
                             from src.runtime.wav_writer import notify_completed_file_removed
 

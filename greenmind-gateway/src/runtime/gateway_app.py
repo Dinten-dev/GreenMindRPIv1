@@ -59,14 +59,9 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(wav_upload_loop(_credentials), name="wav_uploader"),
         asyncio.create_task(cloud_sync_worker(), name="cloud_sync_worker"),
     ]
-    if settings.enable_ble_provisioning:
-        from src.provisioning.ble_worker import provisioning_loop
-
-        tasks.append(
-            asyncio.create_task(provisioning_loop(_credentials), name="provisioning_worker")
-        )
-    else:
-        logger.info("BLE provisioning is disabled (ENABLE_BLE_PROVISIONING=false)")
+    # Gateway sensors enter the dashboard code in their own local hotspot form.
+    # Accept an old environment flag, but never restart the deprecated BLE path.
+    logger.info("Gateway sensor setup uses the local verification-code form; BLE is disabled")
     logger.info("Background workers started: %s", [t.get_name() for t in tasks])
     yield
     for task in tasks:
