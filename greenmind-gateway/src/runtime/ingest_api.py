@@ -19,6 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 from src.persistence.database import get_db
 from src.persistence.models import DeadLetterJob, IngestJob, SensorBatchCursor
 from src.validation import SensorBatch, SensorRegistration, canonical_mac
@@ -264,7 +265,7 @@ async def register_sensor(payload: SensorRegistration):
             resp = await client.post(
                 f"{server_url}/gateways/{gateway_id}/sensors/register",
                 json={"mac_address": mac, "code": code},
-                headers={"X-Api-Key": api_key},
+                headers=gateway_headers(api_key, _credentials.get("gateway_id")),
             )
             if resp.status_code in (200, 201):
                 return {"status": "ok"}

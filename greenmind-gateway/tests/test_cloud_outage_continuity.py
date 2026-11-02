@@ -37,7 +37,12 @@ def test_cloud_failures_keep_ingest_health_and_local_samples_running(tmp_path, m
     original_client, original_sleep = httpx.AsyncClient, asyncio.sleep
     phase = {"mode": 503, "calls": 0}
 
+    cloud_paths = set()
+
     async def cloud(request):
+        assert request.headers["X-Api-Key"] == "local-only"
+        assert request.headers["X-Gateway-Id"] == "local-gateway"
+        cloud_paths.add(request.url.path)
         phase["calls"] += 1
         if phase["mode"] == "dns":
             raise httpx.ConnectError("simulated DNS failure", request=request)
@@ -122,6 +127,12 @@ def test_cloud_failures_keep_ingest_health_and_local_samples_running(tmp_path, m
                         break
                     await original_sleep(0.01)
                 assert pending == 0 and not wav.exists()
+                assert {
+                    "/api/v1/ingest",
+                    "/api/v1/gateways/heartbeat",
+                    "/api/v1/gateways/local-gateway/commands",
+                    "/api/v1/wav/upload",
+                } <= cloud_paths
                 assert (await local.get("/api/v1/health")).status_code == 200
                 assert all(not task.done() for task in tasks)
                 assert reset_call.await_count == command_call.await_count == 0

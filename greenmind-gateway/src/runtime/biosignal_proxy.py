@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 from src.validation import SensorBatch
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ async def proxy_biosignal(payload: SensorBatch):
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             resp = await client.post(
-                f"{server_url}/biosignal/ingest", json=cloud_payload, headers={"X-Api-Key": api_key}
+                f"{server_url}/biosignal/ingest",
+                json=cloud_payload,
+                headers=gateway_headers(api_key, _credentials.get("gateway_id")),
             )
             if resp.status_code in (200, 201):
                 return resp.json()

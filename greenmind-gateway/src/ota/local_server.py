@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from packaging import version as semver
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,8 @@ async def report_device(request: Request):
             logger.error("Cannot forward OTA report: gateway API key is missing")
             raise HTTPException(status_code=503, detail="Gateway credentials unavailable")
 
-        headers = {"X-Api-Key": api_key, "Content-Type": "application/json"}
+        headers = gateway_headers(api_key, secret_data.get("gateway_id"))
+        headers["Content-Type"] = "application/json"
         report_url = f"{settings.firmware_api_url}/firmware/report"
 
         payload = {

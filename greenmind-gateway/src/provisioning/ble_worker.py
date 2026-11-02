@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 import aiohttp
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ class ProvisioningWorker:
         self.running = False
         server_url = credentials.get("server_url") or settings.cloud_api_url
         self.http_base, self.ws_url = _provisioning_urls(server_url)
-        self.headers = {"X-Api-Key": credentials["api_key"]}
+        self.headers = gateway_headers(credentials["api_key"], credentials.get("gateway_id"))
 
     async def start(self):
         self.running = True
