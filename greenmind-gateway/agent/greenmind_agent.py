@@ -30,10 +30,24 @@ import tarfile
 import tempfile
 import time
 from datetime import datetime, timezone
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 
 import httpx
+
+try:
+    # Installed beside the agent for its independent systemd service.
+    from gateway_headers import gateway_headers
+except ModuleNotFoundError:
+    # Source checkout: the gateway application owns the shared helper.
+    helper_path = Path(__file__).resolve().parents[1] / "src/core/gateway_headers.py"
+    helper_spec = spec_from_file_location("greenmind_gateway_headers", helper_path)
+    if helper_spec is None or helper_spec.loader is None:
+        raise ImportError("Gateway header helper is unavailable")
+    helper_module = module_from_spec(helper_spec)
+    helper_spec.loader.exec_module(helper_module)
+    gateway_headers = helper_module.gateway_headers
 
 # ── Constants ────────────────────────────────────────────────────────
 
@@ -400,6 +414,7 @@ def download_release(
     artifact_url: str,
     expected_sha256: str,
     api_key: str,
+    gateway_id: str | None = None,
 ) -> Path | None:
     """Download release tarball to a temp directory and verify SHA256.
 
@@ -425,7 +440,9 @@ def download_release(
         download_url = f"{base_url}{artifact_url}"
         logger.info("Downloading release from %s", artifact_url)
 
-        with client.stream("GET", download_url, headers={"X-Api-Key": api_key}) as resp:
+        with client.stream(
+            "GET", download_url, headers=gateway_headers(api_key, gateway_id)
+        ) as resp:
             if resp.status_code != 200:
                 logger.error("Download failed: HTTP %d", resp.status_code)
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -735,6 +752,7 @@ def download_config(
     artifact_url: str,
     expected_sha256: str,
     api_key: str,
+    gateway_id: str | None = None,
 ) -> dict | None:
     """Download config JSON and verify SHA256."""
     try:
@@ -748,7 +766,7 @@ def download_config(
             logger.error("Refusing malformed config metadata")
             return None
         url = f"{base_url}{artifact_url}"
-        resp = client.get(url, headers={"X-Api-Key": api_key})
+        resp = client.get(url, headers=gateway_headers(api_key, gateway_id))
         if resp.status_code != 200:
             logger.error("Config download failed: HTTP %d", resp.status_code)
             return None
@@ -999,7 +1017,7 @@ def report_state(
         resp = client.post(
             f"{base_url}/api/v1/gateway/state-report",
             json=payload,
-            headers={"X-Api-Key": api_key},
+            headers=gateway_headers(api_key, state.get("gateway_id")),
         )
         if resp.status_code == 200:
             logger.debug("State report sent")
@@ -1028,7 +1046,7 @@ def report_command_result(
                 "result": result,
                 "message": message,
             },
-            headers={"X-Api-Key": api_key},
+            headers=gateway_headers(api_key, gateway_id),
         )
     except Exception as exc:
         logger.debug("Command result report error: %s", exc)
@@ -1116,7 +1134,7 @@ def main() -> None:
                         "current_config_version": current_config,
                         "current_agent_version": AGENT_VERSION,
                     },
-                    headers={"X-Api-Key": api_key},
+                    headers=gateway_headers(api_key, gateway_id),
                 )
 
                 if resp.status_code != 200:
@@ -1300,7 +1318,9 @@ def _handle_app_update(
             report_state(client, base_url, api_key, state, status="disk_insufficient")
             return
 
-        tarball = download_release(client, base_url, artifact_url, sha256, api_key)
+        tarball = download_release(
+            client, base_url, artifact_url, sha256, api_key, state.get("gateway_id")
+        )
         if not tarball:
             state["update_download_status"] = "failed"
             report_state(client, base_url, api_key, state, status="download_failed")
@@ -1403,7 +1423,9 @@ def _handle_config_update(
     if CURRENT_LINK.is_symlink():
         current_app = CURRENT_LINK.resolve().name
 
-    payload = download_config(client, base_url, artifact_url, sha256, api_key)
+    payload = download_config(
+        client, base_url, artifact_url, sha256, api_key, state.get("gateway_id")
+    )
     if not payload:
         return
 

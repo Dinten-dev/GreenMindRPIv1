@@ -341,6 +341,7 @@ setup_agent() {
 
     if [ -f "${gateway_src}/agent/greenmind_agent.py" ]; then
         cp "${gateway_src}/agent/greenmind_agent.py" "${AGENT_DIR}/"
+        cp "${gateway_src}/src/core/gateway_headers.py" "${AGENT_DIR}/"
         cp "${gateway_src}/requirements.lock" "${AGENT_DIR}/requirements.lock"
         info "Agent code installed"
     else

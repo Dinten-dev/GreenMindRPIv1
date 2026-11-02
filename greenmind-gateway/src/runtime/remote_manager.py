@@ -11,6 +11,7 @@ import subprocess
 import httpx
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 from src.network.wifi_manager import NetworkManager
 from src.runtime.ingest_api import sensor_ips
 
@@ -31,7 +32,7 @@ async def remote_manager_loop(credentials: dict) -> None:
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             try:
-                headers = {"X-Api-Key": api_key}
+                headers = gateway_headers(api_key, credentials.get("gateway_id"))
                 resp = await client.get(
                     f"{server_url}/gateways/{gateway_id}/commands",
                     headers=headers,

@@ -20,6 +20,7 @@ from datetime import timezone
 import httpx
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 from src.persistence import database
 from src.persistence.models import DeadLetterJob, IngestJob
 
@@ -126,7 +127,7 @@ async def upload_loop(credentials: dict) -> None:
     """Continuously drain the ingest queue and POST batches to the cloud."""
     api_key = credentials["api_key"]
     server_url = credentials.get("server_url") or settings.cloud_api_url
-    headers = {"X-Api-Key": api_key}
+    headers = gateway_headers(api_key, credentials.get("gateway_id"))
 
     logger.info(
         "Upload worker started → %s/ingest (bulk mode, up to %d/req)", server_url, BATCH_SIZE

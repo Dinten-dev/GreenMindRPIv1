@@ -12,6 +12,7 @@ import socket
 import httpx
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 from src.network.wifi_manager import NetworkManager
 from src.persistence.models import IngestJob
 from src.runtime.wav_uploader import upload_status
@@ -52,7 +53,7 @@ async def heartbeat_loop(credentials: dict) -> None:
                     "wav_last_upload_at": wav_upload["last_upload_at"],
                     "wav_last_error_code": wav_upload["last_error_code"],
                 }
-                headers = {"X-Api-Key": api_key}
+                headers = gateway_headers(api_key, credentials.get("gateway_id"))
 
                 resp = await client.post(
                     f"{server_url}/gateways/heartbeat",

@@ -537,4 +537,41 @@ def test_cloud_outage_does_not_apply_updates_or_restart_gateway(tmp_path, monkey
     with pytest.raises(StopSimulation):
         agent.main()
     assert client.get.call_count == 6
+    assert all(
+        call.kwargs["headers"] == {"X-Api-Key": "local-only", "X-Gateway-Id": "local"}
+        for call in client.get.call_args_list
+    )
     assert all(hook.call_count == 0 for hook in hooks)
+
+
+def test_agent_includes_gateway_identity_on_reports_and_downloads():
+    import greenmind_agent as agent
+
+    client = MagicMock()
+    client.get.return_value.status_code = 404
+    client.post.return_value.status_code = 200
+    client.stream.return_value.__enter__.return_value.status_code = 404
+    agent.report_state(client, "https://example.invalid", "key", {"gateway_id": "id"})
+    agent.report_command_result(client, "https://example.invalid", "key", "id", "cmd", "ok", "")
+    agent.download_config(client, "https://example.invalid", "/config", "0" * 64, "key", "id")
+    agent.download_release(client, "https://example.invalid", "/release", "0" * 64, "key", "id")
+    expected = {"X-Api-Key": "key", "X-Gateway-Id": "id"}
+    assert all(call.kwargs["headers"] == expected for call in client.post.call_args_list)
+    assert client.get.call_args.kwargs["headers"] == expected
+    assert client.stream.call_args.kwargs["headers"] == expected
+
+
+def test_agent_can_import_as_standalone_source_script():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "greenmind_agent.py"
+    code = "import runpy, sys; sys.path.insert(0, sys.argv[1]); runpy.run_path(sys.argv[2], run_name='source_import_test')"
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code, str(script.parent), str(script)],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr

@@ -182,6 +182,18 @@ The gateway reboots into runtime mode, starts accepting ESP32 sensor data, and u
 | POST | `/api/v1/wav/upload` | X-Api-Key | Upload completed WAV file (multipart) |
 | GET | `/api/v1/gateways/{id}/commands` | X-Api-Key | Poll remote commands |
 
+Gateway requests include `X-Gateway-Id` when the stored gateway ID is available.
+The header is an identity hint; `X-Api-Key` remains the credential. Older
+configurations without an ID continue sending the key alone to older backends.
+
+Deploy updated gateway and standalone agent clients first, with the shared header
+helper installed beside the agent. Verify each legacy gateway sends its stored ID
+and continues uploading. Activate the bounded backend only after clients are ready, then enroll each
+legacy key with the controlled server-side migration command. Identity-hinted
+requests verify one legacy hash; ordinary authentication does not migrate it.
+Provide an operator-controlled recovery path for offline or unready devices.
+This client change does not rotate credentials or deploy an update.
+
 ### Agent → Cloud Endpoints (OTA)
 
 | Method | Endpoint | Auth | Description |

@@ -17,6 +17,7 @@ import aiofiles
 import aiohttp
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,7 @@ async def cloud_sync_worker():
         logger.error(f"Failed to read API key for OTA sync: {e}")
         return
 
-    headers = {"X-Api-Key": api_key}
+    headers = gateway_headers(api_key, secret_data.get("gateway_id"))
     sync_url = f"{settings.firmware_api_url}/firmware/sync"
 
     while True:

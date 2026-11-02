@@ -21,6 +21,7 @@ from pathlib import Path
 import httpx
 
 from src.config import settings
+from src.core.gateway_headers import gateway_headers
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +283,7 @@ async def upload_loop(credentials: dict) -> None:
                                 f"{server_url}/wav/upload",
                                 files=files,
                                 data=data,
-                                headers={"X-Api-Key": api_key},
+                                headers=gateway_headers(api_key, credentials.get("gateway_id")),
                             )
 
                         if resp.status_code in (200, 201):
